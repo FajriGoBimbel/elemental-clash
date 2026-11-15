@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Elemental Clash</string>
+    <string name="title_activity_main">Elemental Clash</string>
+    <string name="package_name">com.wahanacreative.elementalclash</string>
+    <string name="custom_url_scheme">com.wahanacreative.elementalclash</string>
+</resources>

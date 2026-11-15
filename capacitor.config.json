@@ -1,0 +1,7 @@
+{
+  "appId": "com.wahanacreative.elementalclash",
+  "appName": "Elemental Clash",
+  "webDir": "dist",
+  "backgroundColor": "#070914",
+  "android": { "allowMixedContent": false }
+}
