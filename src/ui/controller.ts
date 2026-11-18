@@ -4,13 +4,17 @@ import { ELEMS, arenaById, charById, hex } from '../data';
 import { ClientLink, CODE_ABC, RECONNECT_MS } from '../net/room';
 import { getSock } from '../net/transport';
 import { Controls, KEYMAP } from './input';
+import type { Input } from '../game/fighter';
 import { $, bind, elVar, esc, etag, icon, modal, show, sigIcon, ui } from './dom';
 import { T, persist, save, tr } from '../save';
 import { sound } from '../audio';
 
-interface Ctx { portraits: Record<string, string>; athumbs: Record<string, string>; resume?: boolean; exit: () => void }
+export interface GuestOpts { p: [string, string]; a: string; pure: boolean; slot: number }
+/** Mode 2 Layar: perangkat ini merender pertarungan sendiri (disediakan main.ts). */
+interface GuestApi { start(o: GuestOpts, onPause: () => void): void; read(): Input; snap(s: unknown): void; end(): void }
+interface Ctx { portraits: Record<string, string>; athumbs: Record<string, string>; resume?: boolean; guest: GuestApi; exit: () => void }
 let ctx: Ctx, link: ClientLink | null = null, code = '', scr: any = null, view = '', pad: Controls | null = null;
-let wake: { release(): Promise<void> } | null = null, sigT = 0;
+let wake: { release(): Promise<void> } | null = null, sigT = 0, guestMid = -1;
 const pname = (i: number) => T('Pemain ', 'Player ') + (i + 1);
 
 // Sesi disimpan per tab: bila halaman dimuat ulang (reload server dev, tab dibuang sistem),
@@ -28,7 +32,7 @@ export async function controllerMode(c: Ctx) {
   ctx = c; const sock = getSock(); if (!sock) return c.exit();
   link = new ClientLink(sock, await sock.name());
   link.onState = render; link.onMsg = m => { if (m.t === 'scr') { scr = m; render(); } };
-  link.onFb = fb; link.onBuzz = buzz;
+  link.onFb = fb; link.onBuzz = buzz; link.onSnap = m => { if (guestMid >= 0) ctx.guest.snap(m); };
   await link.start();
   keepAwake(true); (screen.orientation as any)?.lock?.('landscape').catch(() => { });
   addEventListener('keydown', typeKey); document.addEventListener('visibilitychange', onVis);
@@ -50,7 +54,16 @@ function keepAwake(on: boolean) {
 }
 function onVis() { if (!document.hidden && link) keepAwake(true); }
 function buzz(k: string) { if (save.haptic && navigator.vibrate) navigator.vibrate(k === 'hit' ? 18 : k === 'hurt' ? 45 : [60, 50, 120]); }
-function padOff() { link?.setReader(null); pad?.destroy(); pad = null; }
+function padOff() { link?.setReader(null); pad?.destroy(); pad = null; if (guestMid >= 0) { guestMid = -1; ctx.guest.end(); } }
+/** Layar host bilang "bertarung": tampilkan joystick (kontroler) atau pertarungan penuh (2 Layar). */
+function play(s: any) {
+  if (s.cfg === 'D') {
+    if (guestMid === (s.mid ?? 0)) return;
+    padOff(); guestMid = s.mid ?? 0;
+    ctx.guest.start({ p: s.p, a: s.a, pure: !!s.pure, slot: link!.slot }, () => link?.cmd('pause'));
+    link!.setReader(() => ctx.guest.read());
+  } else if (!pad) padOn(s.id || '');
+}
 
 // ---------- gabung: papan ketik kode ----------
 function typeKey(e: KeyboardEvent) {
@@ -135,7 +148,7 @@ const top = (extra = '') => `<header class="ctop"><b>${pname(link!.slot)}</b><sp
 const common = { lay: () => layoutModal(), exit: () => leave() };
 
 function inScreen() {
-  const s = scr; const key = s.s + '|' + (s.s === 'fight' ? s.id : JSON.stringify(s));
+  const s = scr; const key = s.s + '|' + (s.s === 'fight' ? s.id + '|' + (s.mid ?? 0) : JSON.stringify(s));
   if (key === view) return; view = key;
   if (s.s !== 'fight' && s.s !== 'pause') padOff();
   switch (s.s) {
@@ -180,10 +193,10 @@ function inScreen() {
       break;
     case 'fight':
       $('.over.cpause')?.remove();
-      if (!pad) padOn(s.id);
+      play(s);
       break;
     case 'pause': {
-      if (!pad) padOn(s.id || '');
+      play(s);
       $('.over.cpause')?.remove();
       const me = s.by === s.slot, drop = s.drop >= 0;
       const o = modal(`<h2>${T('Jeda', 'Paused')}</h2><p>${drop ? T(`${pname(s.drop)} terputus. Menunggu…`, `${pname(s.drop)} disconnected. Waiting…`) : s.by < 0 ? T('Dijeda dari layar host.', 'Paused from the host screen.') : me ? T('Kamu menjeda pertandingan.', 'You paused the match.') : T(`Dijeda oleh ${pname(s.by)}.`, `Paused by ${pname(s.by)}.`)}</p>

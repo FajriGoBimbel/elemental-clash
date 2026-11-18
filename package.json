@@ -11,7 +11,8 @@
     "sim": "tsx scripts/sim.ts",
     "shot": "node scripts/shot.mjs",
     "test:net": "tsx scripts/nettest.ts",
-    "test:mp": "node scripts/mp-e2e.mjs"
+    "test:mp": "node scripts/mp-e2e.mjs",
+    "test:mp2": "node scripts/mp2-e2e.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

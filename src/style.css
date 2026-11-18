@@ -261,6 +261,7 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .vsig { position: absolute; top: 4.6rem; left: 1rem; right: 1rem; display: flex; justify-content: space-between; font-size: 1.1rem; }
 .hud.big .vsig { top: 5.6rem; }
 
+/* .vcards { display: grid; grid-template-columns: repeat(5, 1fr); gap: .6rem; flex: 1; min-height: 0; align-content: center; } */
 .vcards { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; flex: 1; min-height: 0; align-content: center; }
 .vcard { text-align: left; padding: 1rem; border-radius: .45rem; background: rgba(255, 255, 255, .06); border: 1px solid var(--line); display: flex; flex-direction: column; gap: .4rem; min-height: 12rem; transition: transform .1s, border-color .15s; }
 .vcard:active { transform: scale(.97); }
@@ -273,6 +274,7 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .vcard .dev { display: flex; gap: .3rem; height: 2.1rem; align-items: flex-end; }
 .vcard .dev i { width: 1.15rem; height: 1.9rem; border: 2px solid var(--txt); border-radius: .25rem; }
 .vcard .dev i:first-child { width: 2.6rem; height: 1.8rem; }
+.vcard .dev.two i { width: 2.6rem; height: 1.8rem; }
 .vcard .dev.pad svg { width: 2.4rem; height: 2.4rem; fill: none; stroke: var(--gold); stroke-width: 1.8; stroke-linecap: round; }
 .vnote { font-size: .8rem; color: var(--mut); margin-top: .6rem; }
 .vnote.warn { color: var(--gold); }

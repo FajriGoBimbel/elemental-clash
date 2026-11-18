@@ -30,6 +30,10 @@ HP kontroler memilih **Gabung sebagai Kontroler**, memasukkan kode 6 karakter da
 - Halaman kontroler sempat dimuat ulang (mis. reload server dev): sesi tersimpan per tab, kontroler langsung menyambung lagi tanpa kode/izin.
 - Di browser HP, ketukan pertama membuka layar penuh + kunci landscape, dan layar dijaga tetap menyala (NoSleep: Wake Lock di HTTPS, video senyap di `http://`).
 - Koin Main Bareng: +15 per pertandingan untuk profil host, maksimal 10 pertandingan per hari.
+- **D — 2 Layar** (mis. desktop vs desktop): host = Pemain 1; perangkat kedua memilih *Gabung dengan Kode* (kode bisa diketik
+  dengan keyboard) dan menjadi Pemain 2 dengan layar sendiri. Host tetap satu-satunya yang menghitung; perangkat kedua
+  mengirim input dan menerima snapshot keadaan ±60×/dtk + event (`src/net/sync.ts`) lalu merender arena, HUD, dan suara sendiri.
+  Uji: `npm run test:mp2` (tambah `LAN=web` untuk jalur WebRTC).
 - **Versi web (mis. Vercel):** browser tidak bisa membuka UDP/TCP lokal, jadi dipakai WebRTC DataChannel lewat PeerJS
   (`src/net/transport.ts` → `PeerBus`). Internet hanya untuk perkenalan awal di server sinyal (default: cloud publik PeerJS),
   data permainan mengalir langsung antar-perangkat. Server sinyal sendiri: set `VITE_PEER_HOST`, `VITE_PEER_PORT`,

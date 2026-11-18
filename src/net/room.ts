@@ -122,6 +122,9 @@ export class HostRoom {
   private tick() { const t = now(); for (const p of this.peers) if (p?.up && t - p.last > DROP_MS) this.lose(p); }
   private udp(p: Peer, m: object) { this.sock.udpSend(p.host, p.uport, JSON.stringify(m)); }
   send(slot: number, m: object) { const p = this.peers[slot]; if (p?.up) this.sock.tcpSend(p.conn, JSON.stringify(m)); }
+  private sn = 0;
+  /** Mode 2 Layar: snapshot pertarungan untuk dirender perangkat kedua. */
+  state(slot: number, d: object) { const p = this.peers[slot]; if (p?.up) this.udp(p, { t: 'ss', n: ++this.sn, ...d }); }
   fb(slot: number, d: object) { const p = this.peers[slot]; if (p?.up) this.udp(p, { t: 'fb', ts: p.ts, ...d }); }
   buzz(slot: number, k: 'hit' | 'hurt' | 'ult') { const p = this.peers[slot]; if (!p?.up) return; const m = { t: 'bz', k, n: ++this.bz }; this.udp(p, m); this.udp(p, m); }
   /** 0–3 batang sinyal */
@@ -133,7 +136,7 @@ export const sigOf = (rtt: number) => rtt <= 0 ? 3 : rtt < 60 ? 3 : rtt < 140 ? 
 export type CState = 'idle' | 'search' | 'wait' | 'in' | 'lost' | 'fail';
 export class ClientLink {
   state: CState = 'idle'; why: DenyWhy | 'notfound' | 'lost' | '' = ''; slot = -1; tok = ''; hostName = ''; code = ''; rtt = 0; lastRx = 0;
-  onState = () => { }; onMsg = (_m: any) => { }; onFb = (_m: any) => { }; onBuzz = (_k: string) => { };
+  onState = () => { }; onMsg = (_m: any) => { }; onFb = (_m: any) => { }; onBuzz = (_k: string) => { }; onSnap = (_m: any) => { };
   private conn = -1; private host = ''; private uport = 0; private seq = 0; private hist: Frame[] = []; private reader: (() => Input) | null = null;
   private off: (() => void) | null = null; private timer = 0; private inTimer = 0; private attempt = 0; private bzN = 0; private connecting = false;
   constructor(private sock: Sock, private name: string) { }
@@ -169,7 +172,7 @@ export class ClientLink {
       if (m.t === 'here') { if (m.code === this.code && (this.state === 'search' || this.state === 'lost')) this.connect(e.host, m.tcp); return; }
       if (e.host !== this.host || this.state !== 'in') return;
       this.lastRx = now(); if (m.ts) this.rtt = this.rtt ? this.rtt * .8 + (now() - m.ts) * .2 : now() - m.ts;
-      if (m.t === 'fb') this.onFb(m); else if (m.t === 'bz' && m.n !== this.bzN) { this.bzN = m.n; this.onBuzz(m.k); }
+      if (m.t === 'ss') this.onSnap(m); else if (m.t === 'fb') this.onFb(m); else if (m.t === 'bz' && m.n !== this.bzN) { this.bzN = m.n; this.onBuzz(m.k); }
     } else if (e.t === 'data' && e.id === this.conn) {
       const m = parse(e.data); if (!m) return; this.lastRx = now();
       if (m.t === 'wait') this.set('wait');
