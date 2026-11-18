@@ -38,7 +38,11 @@
 
     <!-- Permissions -->
 
-    <!-- INTERNET dibutuhkan WebView Capacitor untuk memuat aset lokal (https://localhost); game tidak melakukan panggilan jaringan. -->
+    <!-- INTERNET dibutuhkan WebView Capacitor (aset lokal) dan soket jaringan lokal Main Bareng.
+         Game tidak pernah menghubungi internet; paket hanya dikirim ke perangkat di Wi-Fi/hotspot yang sama. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

@@ -14,8 +14,8 @@ const V = new THREE.Vector3();
 class FighterView {
   model: CharModel; shadow: THREE.Mesh; target = P(); yaw: number; flashT = 0; walkPh = 0; lastX: number; lastHit = 0; alt = false;
   private ctx: AnimCtx = { state: 'idle', u: 0, st: 0, t: 0, vy: 0, walkPh: 0, back: false, landed: false, alt: false };
-  constructor(public f: Fighter, par: THREE.Group) {
-    this.model = new CharModel(f.def, f.elem);
+  constructor(public f: Fighter, par: THREE.Group, alt = false) {
+    this.model = new CharModel(f.def, f.elem, alt);
     this.shadow = new THREE.Mesh(new THREE.CircleGeometry(.55, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .35, depthWrite: false }));
     this.shadow.rotation.x = -Math.PI / 2;
     par.add(this.model.group, this.shadow);
@@ -64,7 +64,7 @@ export class FightView {
     stage.clear();
     this.av = buildArena(m.arena.id); stage.setEnv(this.av); this.base = { hemi: this.av.hemi[2], sun: this.av.sun[1] };
     this.group.add(this.av.group); stage.content.add(this.group);
-    this.views = m.f.map(f => new FighterView(f, this.group));
+    this.views = m.f.map(f => new FighterView(f, this.group, f.idx === 1 && m.f[0].def === f.def));
     this.views.forEach(v => v.model.setOutline(stage.quality > 0));
     if (m.pure && this.av.pillars) this.av.pillars.forEach(p => p.visible = false);
     this.pillarOn = (this.av.pillars || []).map(() => true);

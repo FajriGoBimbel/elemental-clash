@@ -123,8 +123,11 @@ export class CharModel {
   private sway: { o: THREE.Object3D; a: number; s: number; base: number }[] = []; private outlines: THREE.Mesh[] = [];
   scale: number;
 
-  constructor(public def: CharDef, elem: Elem = def.elem) {
-    const lk = def.look, b = lk.bulk, E = ELEMS[elem];
+  /** alt = palet warna kedua, dipakai pemain 2 bila kedua pemain memilih karakter yang sama. */
+  constructor(public def: CharDef, elem: Elem = def.elem, alt = false) {
+    // palet ke-2: kostum utama putih (atau hitam untuk kostum terang), warna asli jadi aksen, rambut digelapkan
+    const light = new THREE.Color(def.look.c1).getHSL({ h: 0, s: 0, l: 0 }).l > .45;
+    const lk = alt ? { ...def.look, c1: light ? 0x24262f : 0xe6e7ee, c2: def.look.c1, hair: shade(def.look.hair, .5) } : def.look, b = lk.bulk, E = ELEMS[elem];
     this.scale = lk.h;
     const body = new THREE.Group(); body.scale.setScalar(lk.h); this.group.add(body); body.add(this.tilt); this.tilt.add(this.pelvis);
     const T = (c: number) => { const m = new THREE.MeshToonMaterial({ color: c, gradientMap: gradient() }); this.toon.push(m); return m; };

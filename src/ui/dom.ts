@@ -1,5 +1,6 @@
 import { ELEMS, Elem, hex } from '../data';
-import { tr } from '../save';
+import { T, tr } from '../save';
+import { sound } from '../audio';
 
 export const ui = document.getElementById('ui')!;
 export const $ = <T extends HTMLElement = HTMLElement>(s: string, el: ParentNode = document) => el.querySelector(s) as T;
@@ -22,3 +23,28 @@ export const SVG = {
   dsh: '<svg viewBox="0 0 24 24"><path d="M4.5 6l6 6-6 6M13 6l6 6-6 6"/></svg>',
   ult: '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.8 6.3 6.7.7-5 4.6 1.4 6.7L12 17.4l-5.9 3.4 1.4-6.7-5-4.6 6.7-.7z" fill="currentColor" stroke="none"/></svg>',
 };
+
+// ---------- util layar (dipakai menu host dan mode kontroler) ----------
+export type Handlers = Record<string, (v: string, el: HTMLElement) => void>;
+export function bind(root: HTMLElement, h: Handlers) {
+  root.addEventListener('click', e => {
+    const t = (e.target as HTMLElement).closest<HTMLElement>('[data-a]'); if (!t || !root.contains(t) || t.classList.contains('hold')) return;
+    sound.unlock(); const a = t.dataset.a!; (a === 'back' ? sound.back() : sound.ui()); h[a]?.(t.dataset.v || '', t);
+  });
+  // tombol .hold harus ditahan 2 detik (keluar/tutup di kontroler agar tidak terpencet saat bertarung)
+  root.addEventListener('pointerdown', e => {
+    const t = (e.target as HTMLElement).closest<HTMLElement>('[data-a].hold'); if (!t || !root.contains(t)) return;
+    t.classList.add('holding'); const id = setTimeout(() => { t.classList.remove('holding'); sound.back(); h[t.dataset.a!]?.(t.dataset.v || '', t); }, 2000);
+    const stop = () => { clearTimeout(id); t.classList.remove('holding'); t.removeEventListener('pointerup', stop); t.removeEventListener('pointerleave', stop); t.removeEventListener('pointercancel', stop); };
+    t.addEventListener('pointerup', stop); t.addEventListener('pointerleave', stop); t.addEventListener('pointercancel', stop);
+  });
+}
+export function show(html: string, cls: string, h: Handlers = {}) {
+  ui.innerHTML = `<div class="scr ${cls}">${html}</div>`; const root = ui.firstElementChild as HTMLElement; bind(root, h); return root;
+}
+export function modal(html: string, h: Handlers, cls = '') {
+  const o = document.createElement('div'); o.className = 'over'; o.innerHTML = `<div class="panel modal ${cls}">${html}</div>`; ui.appendChild(o); bind(o, h); return o;
+}
+export function toast(text: string) { const d = document.createElement('div'); d.className = 'notice show'; d.style.top = '1rem'; d.style.zIndex = '50'; d.textContent = text; ui.appendChild(d); setTimeout(() => d.remove(), 1700); }
+export const sigIcon = (n: number) => `<span class="sig s${n}" aria-label="${T('Sinyal', 'Signal')} ${n}/3"><i></i><i></i><i></i></span>`;
+export const esc = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);

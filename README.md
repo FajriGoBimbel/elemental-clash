@@ -18,6 +18,27 @@ npm run sim -- 20  # simulasi bot lawan bot untuk memeriksa keseimbangan
 Kontrol desktop: `A/D` gerak · `W` lompat · `S` menunduk · `J` serang · `K/L` jurus · `I`/`Spasi` tangkis · `O`/`Shift` dash · `U` pamungkas · `Esc` jeda.
 Tambahkan `?demo` di URL agar karakter pemain dimainkan bot (mode tontonan), `?skip` untuk melewati layar ketuk.
 
+## Main Bareng (multiplayer lokal, CR-001)
+
+Menu **Main Bareng** punya tiga konfigurasi: **A** satu layar (dua set kontrol sentuh kiri/kanan; keyboard P1 `WASD J K L I O U`,
+P2 panah + `, . / ' ; Shift kanan` atau numpad), **B** layar + 1 HP kontroler, **C** layar + 2 HP kontroler.
+HP kontroler memilih **Gabung sebagai Kontroler**, memasukkan kode 6 karakter dari lobi, lalu menunggu izin host.
+
+- Host satu-satunya penentu hasil; kontroler hanya mengirim input (UDP 60×/dtk, 3 frame terakhir ikut dikirim).
+- Penemuan host lewat siaran UDP di port 47820, sesi lewat TCP 47821, hanya di jaringan lokal (Wi-Fi sama atau hotspot).
+- Putus koneksi: pertandingan dijeda, kontroler menyambung ulang otomatis ≤ 15 dtk; lewat itu host memilih lanjut lawan bot atau akhiri.
+- Halaman kontroler sempat dimuat ulang (mis. reload server dev): sesi tersimpan per tab, kontroler langsung menyambung lagi tanpa kode/izin.
+- Di browser HP, ketukan pertama membuka layar penuh + kunci landscape, dan layar dijaga tetap menyala (NoSleep: Wake Lock di HTTPS, video senyap di `http://`).
+- Koin Main Bareng: +15 per pertandingan untuk profil host, maksimal 10 pertandingan per hari.
+
+Jaringan lokal butuh aplikasi Android (plugin native `LanPlugin`/`LanCore` di `android/`). Untuk uji tanpa APK:
+`npm run dev`, lalu buka alamat Network di beberapa HP/tab — paket diteruskan lewat server dev (hanya mode dev).
+
+```bash
+npm run test:net                                   # uji protokol: pairing, izin, penuh, 5% paket hilang, putus-sambung
+npm run dev & URL=http://localhost:5173 npm run test:mp -- <folder-screenshot>   # uji 3 tab: host + 2 kontroler
+```
+
 ## Android
 
 Proyek Android ada di `android/` (landscape, layar penuh imersif, minSdk 26 = Android 8).
@@ -37,7 +58,8 @@ iOS: jalankan `npm i @capacitor/ios && npx cap add ios` di macOS dengan Xcode, l
 | `src/data.ts` | Elemen, 6 karakter + bos, jurus, 7 arena, 4 tingkat bot, tangga Mode Cerita |
 | `src/game/` | Logika murni tanpa grafis: `fighter.ts` (state petarung), `match.ts` (hit, ronde, efek arena), `bot.ts` (AI) |
 | `src/gfx/` | `character.ts` (model + rangka + animasi), `arenas.ts`, `fx.ts` (partikel), `fightview.ts` (kamera, efek jurus), `stage.ts` (renderer, kualitas) |
-| `src/ui/` | HUD, kontrol sentuh/keyboard, ikon elemen |
+| `src/ui/` | HUD, kontrol sentuh/keyboard, ikon elemen, `controller.ts` (mode HP kontroler) |
+| `src/net/` | `transport.ts` (soket native / relay dev / antar-tab), `room.ts` (protokol host & kontroler) |
 | `src/main.ts` | Alur layar dan loop game |
 | `src/save.ts`, `src/audio.ts` | Data simpanan lokal, audio sintetis |
 | `scripts/` | `sim.ts` (simulasi keseimbangan), `shot.mjs` (uji visual headless), `android-build.sh` |

@@ -6,8 +6,13 @@ import { Bot } from './game/bot';
 import { Stage } from './gfx/stage';
 import { FightView } from './gfx/fightview';
 import { Hud } from './ui/hud';
-import { Controls } from './ui/input';
-import { $, $$, elVar, etag, icon, ui } from './ui/dom';
+import { Controls, KEYMAP } from './ui/input';
+import { Input, noInput } from './game/fighter';
+import { HostRoom } from './net/room';
+import { getSock } from './net/transport';
+import { controllerMode, ctlSaved } from './ui/controller';
+import { initScreen } from './ui/screen';
+import { $, $$, bind, elVar, esc, etag, icon, modal, show, sigIcon, toast, ui } from './ui/dom';
 import { T, loadSave, persist, resetSave, save, today, tr } from './save';
 import { sound } from './audio';
 
@@ -15,40 +20,32 @@ loadSave();
 const stage = new Stage(document.getElementById('gl') as HTMLCanvasElement);
 const portraits: Record<string, string> = {}, athumbs: Record<string, string> = {};
 const params = new URLSearchParams(location.search);
-type Mode = 'quick' | 'story' | 'training';
+type Mode = 'quick' | 'story' | 'training' | 'versus';
 const app = { mode: 'quick' as Mode, char: save.lastChar, opp: 'random', level: save.level, dummy: 'stand', arena: 'kuil', pure: false, storyIdx: 0 };
-interface Fight { m: Match; view: FightView; hud: Hud | null; ctl: Controls | null; bot: Bot; demo: Bot | null; paused: boolean; acc: number; started: boolean; oppId: string; arenaId: string; level: number }
+interface Fight {
+  m: Match; view: FightView; hud: Hud | null; bot: Bot | null; demo: Bot | null; paused: boolean; acc: number; started: boolean; oppId: string; arenaId: string; level: number;
+  /** kontrol sentuh/keyboard di layar ini dan slot pemain yang dikendalikan masing-masing */
+  ctls: Controls[]; ctlSlot: number[]; src: (() => Input)[];
+  /** Main Bareng: siapa yang menjeda (-1 = host), modal jeda, slot yang terputus */
+  pauseBy: number; pauseEl: HTMLElement | null; dropSlot: number;
+}
 let fight: Fight | null = null;
 const STEP = 1 / 60;
 
 function applySettings() {
   const r = document.documentElement; r.style.setProperty('--ts', String(save.text)); r.classList.toggle('cb', save.cb); r.lang = save.lang;
   if (stage.quality !== save.gfx) stage.setQuality(save.gfx);
-  sound.setVol(save.sfx, save.music); fight?.ctl?.applySettings();
+  sound.setVol(save.sfx, save.music); fight?.ctls.forEach(c => c.applySettings());
 }
 const vibrate = (ms: number) => { if (save.haptic && navigator.vibrate) navigator.vibrate(ms); };
 
 // ---------- util layar ----------
-type Handlers = Record<string, (v: string, el: HTMLElement) => void>;
-function bind(root: HTMLElement, h: Handlers) {
-  root.addEventListener('click', e => {
-    const t = (e.target as HTMLElement).closest<HTMLElement>('[data-a]'); if (!t || !root.contains(t)) return;
-    sound.unlock(); const a = t.dataset.a!; (a === 'back' ? sound.back() : sound.ui()); h[a]?.(t.dataset.v || '', t);
-  });
-}
-function show(html: string, cls: string, h: Handlers = {}) {
-  ui.innerHTML = `<div class="scr ${cls}">${html}</div>`; const root = ui.firstElementChild as HTMLElement; bind(root, h); return root;
-}
-function modal(html: string, h: Handlers, cls = '') {
-  const o = document.createElement('div'); o.className = 'over'; o.innerHTML = `<div class="panel modal ${cls}">${html}</div>`; ui.appendChild(o); bind(o, h); return o;
-}
-function toast(text: string) { const d = document.createElement('div'); d.className = 'notice show'; d.style.top = '1rem'; d.style.zIndex = '50'; d.textContent = text; ui.appendChild(d); setTimeout(() => d.remove(), 1700); }
 const coins = () => `<span class="coins">${save.coins}</span>`;
 function buy(kind: 'chars' | 'arenas', id: string, price: number) {
   if (save.coins < price) { sound.deny(); toast(T('Koin belum cukup. Menangkan pertandingan untuk mendapat koin.', 'Not enough coins. Win matches to earn more.')); return false; }
   save.coins -= price; save[kind].push(id); persist(); sound.coin(); return true;
 }
-function endFight() { if (!fight) return; fight.hud?.destroy(); fight.ctl?.destroy(); fight.view.dispose(); fight = null; }
+function endFight() { if (!fight) return; fight.hud?.destroy(); fight.ctls.forEach(c => c.destroy()); fight.pauseEl?.remove(); fight.view.dispose(); fight = null; }
 
 // ---------- splash ----------
 async function splash() {
@@ -57,6 +54,7 @@ async function splash() {
   const jobs: (() => void)[] = [...CHARS, BOSS].map(c => () => { portraits[c.id] = stage.thumbChar(c); });
   for (const a of ARENAS) jobs.push(() => { athumbs[a.id] = stage.thumbArena(a.id); });
   for (let i = 0; i < jobs.length; i++) { jobs[i](); $('.load i').style.width = (i + 1) / jobs.length * 100 + '%'; await new Promise(r => setTimeout(r, 0)); }
+  if (ctlSaved() && getSock()) return joinCtl(true); // halaman sempat dimuat ulang saat jadi kontroler: sambung lagi otomatis
   if (params.has('skip')) return menu();
   $('#lt').outerHTML = `<div class="tap">${T('Ketuk untuk mulai', 'Tap to start')}</div>`; $('.load').remove();
   const root = ui.firstElementChild as HTMLElement;
@@ -70,12 +68,13 @@ function dailyGoal() {
   return { char: charById(save.chars[h % save.chars.length]), arena: arenaById(save.arenas[(h >>> 3) % save.arenas.length]) };
 }
 function menu() {
-  endFight(); sound.music('menu');
+  endFight(); vsClose(); if (idle) setIdle(false); sound.music('menu');
   const c = charById(save.lastChar), d = dailyGoal(); stage.showChar(c, .5); stage.showSpin = .3;
   show(`<header class="topbar"><div class="logo sm">Elemental<b>Clash</b></div>${coins()}</header>
     <nav class="mnav">
       <button class="btn pri" data-a="mode" data-v="quick" style="--el:#ffd166">${T('Pertandingan Cepat', 'Quick Match')}</button>
       <button class="btn" data-a="mode" data-v="story">${T('Mode Cerita', 'Story Mode')}<small>${T('Turnamen', 'Tournament')}</small></button>
+      <button class="btn" data-a="versus">${T('Main Bareng', 'Versus')}<small>${T('2 pemain', '2 players')}</small></button>
       <button class="btn" data-a="mode" data-v="training">${T('Latihan', 'Training')}</button>
       <button class="btn" data-a="collection">${T('Koleksi', 'Collection')}</button>
       <button class="btn" data-a="settings">${T('Pengaturan', 'Settings')}</button>
@@ -85,7 +84,7 @@ function menu() {
       ${save.daily.done ? `<p class="done">${T('Selesai! Kembali lagi besok.', 'Done! Come back tomorrow.')}</p>` : `<p>${T(`Menangkan Pertandingan Cepat memakai <b>${d.char.name}</b> di <b>${tr(d.arena.name)}</b>.`, `Win a Quick Match as <b>${d.char.name}</b> in <b>${tr(d.arena.name)}</b>.`)} <span class="coins">+150</span></p>`}
     </aside>`, 'menu', {
     mode: v => { app.mode = v as Mode; select(save.lastChar); },
-    collection: () => collection(), settings: () => settings(),
+    collection: () => collection(), settings: () => settings(), versus: () => vsMenu(),
   });
 }
 
@@ -151,7 +150,8 @@ function opponent() {
 }
 
 // ---------- pilih arena ----------
-function arenaScreen() {
+function arenaScreen(still = false) {
+  const V = app.mode === 'versus';
   const cur = app.arena === 'random' ? null : arenaById(app.arena), locked = !!cur && !save.arenas.includes(cur.id);
   const card = (a: typeof ARENAS[0]) => {
     const lock = !save.arenas.includes(a.id);
@@ -159,15 +159,16 @@ function arenaScreen() {
       <div class="im" style="background-image:url(${athumbs[a.id]})"></div>${lock ? `<span class="price coins">${a.price}</span>` : ''}
       <div class="tx"><h4>${a.elem ? icon(a.elem) : ''}${tr(a.name)}</h4><p>${a.elem ? `<b style="color:${hex(ELEMS[a.elem].col)}">+10% ${tr(ELEMS[a.elem].name)}</b> · ` : ''}${tr(a.effect)}</p></div></button>`;
   };
-  show(`<div class="title"><h2>${T('Pilih Arena', 'Choose Arena')}</h2><span class="mut">${T('Arena memberi bonus elemen dan satu efek lingkungan', 'Each arena grants an element bonus and one hazard')}</span><span class="grow"></span>${coins()}</div>
+  show(`<div class="title"><h2>${T('Pilih Arena', 'Choose Arena')}</h2><span class="mut">${V ? (remote(0) ? T('Pemain 1 memilih arena di HP-nya', 'Player 1 picks the arena on their phone') : T('Pemain 1 memilih arena', 'Player 1 picks the arena')) : T('Arena memberi bonus elemen dan satu efek lingkungan', 'Each arena grants an element bonus and one hazard')}</span><span class="grow"></span>${coins()}</div>
     <div class="agrid">${ARENAS.map(card).join('')}
       <button class="ac rand ${app.arena === 'random' ? 'sel' : ''}" data-a="pick" data-v="random"><div class="im">?</div><div class="tx"><h4>${T('Acak', 'Random')}</h4><p>${T('Pilih arena terbuka secara acak', 'Pick a random unlocked arena')}</p></div></button></div>
     <div class="foot"><button class="btn" data-a="back">${T('Kembali', 'Back')}</button>
       <button class="tog ${app.pure ? 'on' : ''}" data-a="pure"><i></i><span><b>${T('Mode Murni', 'Pure Mode')}</b> <span class="mut">${T('— matikan efek lingkungan', '— turn hazards off')}</span></span></button>
-      ${locked ? `<button class="btn pri" data-a="buy">${T('Buka', 'Unlock')} · ${cur!.price}</button>` : `<button class="btn pri" data-a="ok">${T('Mulai', 'Fight')}</button>`}</div>`, 'dim', {
-    pick: v => { app.arena = v; arenaScreen(); }, pure: () => { app.pure = !app.pure; arenaScreen(); }, back: () => opponent(),
+      ${locked ? `<button class="btn pri" data-a="buy">${T('Buka', 'Unlock')} · ${cur!.price}</button>` : `<button class="btn pri" data-a="ok">${T('Mulai', 'Fight')}</button>`}</div>`, still ? 'dim still' : 'dim', {
+    pick: v => { app.arena = v; arenaScreen(); }, pure: () => { app.pure = !app.pure; arenaScreen(); }, back: () => V ? vsSelect(true) : opponent(),
     buy: () => { if (buy('arenas', cur!.id, cur!.price)) arenaScreen(); },
     ok: () => {
+      if (V) return vsGo();
       sound.confirm();
       const pool = CHARS.filter(c => c.id !== app.char);
       const opp = app.opp === 'random' ? pool[Math.floor(Math.random() * pool.length)].id : app.opp;
@@ -175,6 +176,7 @@ function arenaScreen() {
       startFight(opp, ar, app.mode === 'training' ? 1 : app.level);
     },
   });
+  if (V) vsSync();
 }
 
 // ---------- mode cerita ----------
@@ -201,21 +203,29 @@ function story() {
 }
 
 // ---------- pertarungan ----------
-function startFight(oppId: string, arenaId: string, level: number) {
+function startFight(oppId: string, arenaId: string, level: number, p1Id = app.char) {
   endFight();
-  const p1 = charById(app.char), p2 = charById(oppId), arena = arenaById(arenaId), training = app.mode === 'training';
+  const V = app.mode === 'versus', p1 = charById(p1Id), p2 = charById(oppId), arena = arenaById(arenaId), training = app.mode === 'training';
   const m = new Match({ p1, p2, arena, pure: app.mode === 'story' ? false : app.pure, training }); m.events.length = 0;
   ui.innerHTML = ''; stage.showSpin = 0;
-  const view = new FightView(stage, m), bot = new Bot(BOT_LEVELS[level], !!p2.boss);
-  if (training && app.dummy !== 'fight') bot.dummy = app.dummy;
-  fight = { m, view, hud: null, ctl: null, bot, demo: params.has('demo') ? new Bot(BOT_LEVELS[2]) : null, paused: false, acc: 0, started: false, oppId, arenaId, level };
+  const view = new FightView(stage, m), bot = V ? null : new Bot(BOT_LEVELS[level], !!p2.boss);
+  if (bot && training && app.dummy !== 'fight') bot.dummy = app.dummy;
+  const F: Fight = fight = {
+    m, view, hud: null, bot, demo: params.has('demo') && !V ? new Bot(BOT_LEVELS[2]) : null, paused: false, acc: 0, started: false, oppId, arenaId, level,
+    ctls: [], ctlSlot: [], src: [], pauseBy: -1, pauseEl: null, dropSlot: -1,
+  };
+  F.src = V ? [0, 1].map(i => () => vsInput(F, i))
+    : [() => F.demo ? F.demo.update(STEP, m.f[0], m.f[1], m) : F.ctls[0]?.read() ?? noInput(), () => bot!.update(STEP, m.f[1], m.f[0], m)];
   view.vsT = 2.2; view.onEvent = onFightEvent; sound.music(arena.id);
   ui.innerHTML = `<div class="vsban"><div class="side" style="${elVar(p1.elem)}"><h2>${p1.name}</h2>${etag(p1.elem)}</div><div class="vs">VS</div><div class="side" style="${elVar(p2.elem)}"><h2>${p2.name}</h2>${etag(p2.elem)}</div></div>`;
   sound.whoosh(2);
 }
 function beginRound1() {
   const f = fight!; ui.innerHTML = '';
-  f.hud = new Hud(ui, f.m, portraits); f.ctl = new Controls(ui, f.m.f[0]); f.ctl.onPause = pause; f.hud.pauseBtn.addEventListener('click', pause);
+  f.hud = new Hud(ui, f.m, portraits); f.hud.pauseBtn.addEventListener('click', () => pause());
+  if (app.mode === 'versus') vsControls(f);
+  else { f.ctls = [new Controls(ui, f.m.f[0].elem)]; f.ctlSlot = [0]; }
+  f.ctls.forEach(c => c.onPause = () => pause());
   f.started = true; f.m.pt = 0; f.m.ev({ t: 'round', n: 1 });
   const a = f.m.arena; if (!f.m.pure && a.elem) setTimeout(() => fight === f && f.hud?.notice(`${tr(a.name)}: ${tr(a.effect)}`, hex(ELEMS[a.elem!].col), 3.5), 1800);
 }
@@ -229,11 +239,14 @@ function onFightEvent(e: Ev) {
       if (e.adv && hud) { const [x, y] = stage.project(e.x, e.y + .7); hud.pop(x, y, e.adv); }
       if (e.att && e.kind === 'hit') hud?.combo(e.att.idx, e.def.comboN);
       if (e.kind === 'break') hud?.notice(T('Tangkisan jebol!', 'Guard break!'), '#ff5b5b', 1.2);
-      if (e.def.idx === 0 && e.kind !== 'block') vibrate(e.strong ? 45 : 18);
+      if (e.kind !== 'block') {
+        if (isLocal(e.def.idx)) vibrate(e.strong ? 45 : 18);
+        buzz(e.def.idx, 'hurt'); if (e.att) buzz(e.att.idx, 'hit');
+      }
       break;
     }
     case 'move': sound.whoosh(e.mv.strong ? 1.6 : 1); if (e.mv.cd) sound.elem(e.f.elem, .6); break;
-    case 'ult': hud?.ult(e.f); sound.ult(); vibrate(80); break;
+    case 'ult': hud?.ult(e.f); sound.ult(); vibrate(80); buzz(e.f.idx, 'ult'); break;
     case 'entFire': { const v = e.e.vis; if (v === 'strike') sound.thunder(); else if (v === 'eruption' || v === 'quake' || v === 'lava') sound.boom(); else if (e.e.elem && v !== 'trap') sound.elem(e.e.elem, .8); break; }
     case 'ent': if (!e.e.owner && e.e.delay > .5) { sound.warn(); if (e.e.vis === 'lava') hud?.notice(T('Lava menyembur di tepi arena!', 'Lava bursts at the edges!'), '#ff5a1f'); if (e.e.vis === 'aroots') hud?.notice(T('Akar muncul!', 'Roots are sprouting!'), '#1fae5e', 1.4); } break;
     case 'warn': sound.warn(); hud?.notice(T('Ombak datang dari ', 'Wave incoming from the ') + (e.dir > 0 ? T('kiri', 'left') : T('kanan', 'right')) + T('! Lompati.', '! Jump over it.'), '#1fc7c1'); break;
@@ -241,7 +254,7 @@ function onFightEvent(e: Ev) {
     case 'elemShift': hud?.notice(`Omnis → ${tr(ELEMS[e.f.elem as keyof typeof ELEMS].name)}`, hex(ELEMS[e.f.elem as keyof typeof ELEMS].col), 2.5); sound.elem(e.f.elem, 1); break;
     case 'ko': sound.ko(); vibrate(120); hud?.msg('K.O.', '', 1.6, '#ff5b5b'); break;
     case 'roundEnd': if (e.reason === 'time') hud?.msg(e.winner < 0 ? T('Seri', 'Draw') : T('Waktu Habis', 'Time Up'), e.winner < 0 ? T('Ronde diulang', 'Round replayed') : '', 1.6); else if (e.reason === 'ring') { hud?.msg('Ring Out!', '', 1.6, '#6fe3b8'); sound.ko(); } break;
-    case 'matchEnd': if (f.ctl) f.ctl.enabled = false; setTimeout(() => fight === f && result(e.winner === 0), 900); break;
+    case 'matchEnd': f.ctls.forEach(c => c.enabled = false); setTimeout(() => fight === f && (app.mode === 'versus' ? vsResult(e.winner) : result(e.winner === 0)), 900); break;
     case 'jump': sound.jump(); break; case 'land': sound.land(); break; case 'dash': sound.dash(); break; case 'heal': sound.heal(); break;
     case 'pillarBreak': sound.boom(); hud?.notice(T('Pilar hancur!', 'Pillar destroyed!'), '#e0b955', 1.4); break;
   }
@@ -254,9 +267,10 @@ function movesHtml(c: CharDef) {
     <div class="mv"><b>${T('Tangkis', 'Block')}</b><span>${T('Menahan 85% damage. Tiap serangan yang ditahan memakai stamina; stamina habis = tangkisan jebol.', 'Blocks 85% of damage. Each blocked hit costs stamina; at zero your guard breaks.')}</span></div>
     <div class="mv"><b>Dash</b><span>${T('Melesat cepat dan kebal sesaat. Memakai 1 stamina; pulih penuh dalam 3 detik.', 'A quick burst with brief invulnerability. Costs 1 stamina; fully recovers in 3 seconds.')}</span></div></div>`;
 }
-function pause() {
+function pause(by = -1) {
   const f = fight; if (!f || f.paused || !f.started || f.m.phase === 'over') return;
-  f.paused = true; sound.back();
+  f.paused = true; f.pauseBy = by; sound.back();
+  if (app.mode === 'versus') return vsPauseModal();
   const c = f.m.f[0].def, tr_ = f.m.training;
   const o = modal(`<h2>${T('Jeda', 'Paused')}</h2><p class="mut">${c.name} · ${T('Daftar jurus', 'Move list')}</p>${movesHtml(c)}
     ${tr_ ? `<div class="srow"><span>${T('Perilaku lawan', 'Dummy behavior')}</span><div class="seg">${[['stand', T('Diam', 'Stand')], ['block', T('Tangkis', 'Block')], ['fight', T('Melawan', 'Fight')]].map(d => `<button data-a="dummy" data-v="${d[0]}" class="${app.dummy === d[0] ? 'on' : ''}">${d[1]}</button>`).join('')}</div></div>` : ''}
@@ -269,7 +283,7 @@ function pause() {
 
 // ---------- hasil ----------
 function result(win: boolean) {
-  const f = fight; if (!f) return; f.hud?.destroy(); f.ctl?.destroy(); f.hud = null; f.ctl = null;
+  const f = fight; if (!f) return; f.hud?.destroy(); f.ctls.forEach(c => c.destroy()); f.hud = null; f.ctls = [];
   const m = f.m, me = m.f[0].def, earn: [string, number][] = [];
   if (app.mode === 'quick') {
     earn.push(win ? [T('Kemenangan', 'Victory') + ` (${tr(BOT_LEVELS[f.level].name)})`, 40 + 20 * f.level] : [T('Hadiah hiburan', 'Consolation'), 10]);
@@ -352,8 +366,264 @@ function settings() {
 }
 function setKey(k: string, val: any) { const p = k.split('.'); if (p.length === 2) (save as any)[p[0]][p[1]] = val; else (save as any)[k] = val; persist(); applySettings(); }
 
+// ---------- Main Bareng (host) ----------
+// A = satu layar (2 pemain sentuh), B = layar + 1 kontroler HP, C = layar + 2 kontroler HP.
+type Cfg = 'A' | 'B' | 'C';
+type VsPhase = 'lobby' | 'char' | 'arena' | 'fight' | 'result';
+interface Vs {
+  cfg: Cfg; room: HostRoom | null; phase: VsPhase; picks: [string, string]; ready: [boolean, boolean]; bots: (Bot | null)[];
+  arenaId: string; result: { winner: number; score: string } | null; timer: number; fbT: number; advT: number;
+}
+let vs: Vs | null = null;
+const MP_COINS = 15, MP_DAILY = 10; // koin Main Bareng hanya untuk profil host, dibatasi per hari
+const pname = (i: number) => T('Pemain ', 'Player ') + (i + 1);
+const remote = (i: number) => !!vs?.room && vs.room.remote(i);
+const isLocal = (i: number) => app.mode === 'versus' ? !remote(i) : i === 0;
+const buzz = (i: number, k: 'hit' | 'hurt' | 'ult') => { if (remote(i) && !vs!.bots[i]) vs!.room!.buzz(i, k); };
+const cfgName = (c: Cfg) => ({ A: T('Satu Layar', 'One Screen'), B: T('Layar + 1 Kontroler', 'Screen + 1 Controller'), C: T('Layar + 2 Kontroler', 'Screen + 2 Controllers') })[c];
+
+function vsMenu() {
+  endFight(); vsClose(); sound.music('menu');
+  stage.showChar(charById(save.lastChar), 0); stage.clear(); // langit menu tetap, tanpa model agar kartu tidak tertutup
+  const sock = getSock(), lan = !!sock;
+  const card = (k: Cfg, t: string, d: string, n: string, need: boolean) => `<button class="vcard" data-a="cfg" data-v="${k}" ${need && !lan ? 'disabled' : ''}>
+    <span class="dev">${'<i></i>'.repeat(k === 'A' ? 1 : k === 'B' ? 2 : 3)}</span><h3>${t}</h3><p>${d}</p><small>${n}</small></button>`;
+  show(`<div class="title"><h2>${T('Main Bareng', 'Versus')}</h2><span class="mut">${T('1 lawan 1 dengan teman · tanpa internet', '1v1 with a friend · no internet needed')}</span></div>
+    <div class="vcards">
+      ${card('A', T('Satu Layar', 'One Screen'), T('Berdua bermain sentuh di layar ini. Paling nyaman di tablet.', 'Both players use touch on this screen. Best on a tablet.'), T('1 perangkat', '1 device'), false)}
+      ${card('B', T('Layar + 1 Kontroler', 'Screen + 1 Controller'), T('Pemain 1 sentuh di layar ini, Pemain 2 memakai HP-nya sebagai joystick.', 'Player 1 uses touch here, Player 2 uses their phone as a gamepad.'), T('2 perangkat', '2 devices'), true)}
+      ${card('C', T('Layar + 2 Kontroler', 'Screen + 2 Controllers'), T('Kedua pemain memakai HP masing-masing; layar ini hanya menampilkan pertarungan.', 'Both players use their own phones; this screen only shows the fight.'), T('3 perangkat · tablet atau TV', '3 devices · tablet or TV'), true)}
+      <button class="vcard join" data-a="join" ${lan ? '' : 'disabled'}><span class="dev pad">${SVG_PAD}</span><h3>${T('Gabung sebagai Kontroler', 'Join as Controller')}</h3><p>${T('Masukkan kode ruangan dari layar host. HP ini menjadi joystick dan tombol.', 'Enter the room code from the host screen. This phone becomes the gamepad.')}</p><small>${T('HP ini', 'This phone')}</small></button>
+    </div>
+    <p class="vnote ${lan ? '' : 'warn'}">${lan
+      ? T('Semua perangkat harus di Wi-Fi yang sama, atau sambungkan ke hotspot salah satu HP. Kuota internet tidak terpakai.', 'All devices must share one Wi-Fi network, or join one phone\'s hotspot. No mobile data is used.') + (sock!.kind !== 'native' ? ` <span class="mut">(${sock!.kind === 'relay' ? T('mode uji: relay server dev', 'test mode: dev server relay') : T('mode uji: antar-tab', 'test mode: between tabs')})</span>` : '')
+      : T('Kontroler HP membutuhkan aplikasi Android Elemental Clash; versi browser tidak bisa membuka jaringan lokal. Mode Satu Layar tetap bisa dimainkan.', 'Phone controllers need the Elemental Clash Android app; the browser version cannot open local network sockets. One Screen mode still works.')}</p>
+    <div class="foot"><button class="btn" data-a="back">${T('Kembali', 'Back')}</button></div>`, 'dim', {
+    cfg: v => vsStart(v as Cfg), back: () => menu(),
+    join: () => joinCtl(),
+  });
+}
+function joinCtl(resume = false) { endFight(); setIdle(true); sound.music(null); controllerMode({ portraits, athumbs, resume, exit: () => { setIdle(false); vsMenu(); } }); }
+const SVG_PAD = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="19" height="11" rx="5.5"/><path d="M7 10v4M5 12h4"/><circle cx="16" cy="10.6" r=".9" fill="currentColor"/><circle cx="18" cy="13.2" r=".9" fill="currentColor"/></svg>';
+
+/** Mode kontroler: tidak merender 3D sama sekali (hemat baterai di HP kontroler). */
+function setIdle(on: boolean) { idle = on; if (on) stage.clear(); stage.canvas.style.visibility = on ? 'hidden' : ''; }
+async function vsStart(cfg: Cfg) {
+  app.mode = 'versus';
+  const second = save.chars.find(id => id !== save.lastChar) || save.lastChar;
+  const v: Vs = vs = { cfg, room: null, phase: 'lobby', picks: [save.lastChar, second], ready: [false, false], bots: [null, null], arenaId: 'kuil', result: null, timer: 0, fbT: 0, advT: 0 };
+  if (!save.arenas.includes(app.arena) && app.arena !== 'random') app.arena = 'kuil';
+  v.timer = setInterval(vsTick, 300) as unknown as number;
+  if (cfg === 'A') return vsSelect();
+  const sock = getSock()!, room = new HostRoom(sock, cfg === 'B' ? [1] : [0, 1], await sock.name());
+  try { await room.open(); } catch {
+    vsClose(); toast(T('Gagal membuka ruangan. Pastikan Wi-Fi atau hotspot menyala, lalu coba lagi.', 'Could not open the room. Make sure Wi-Fi or hotspot is on, then try again.')); return vsMenu();
+  }
+  if (vs !== v) { room.close(); return; }
+  v.room = room;
+  room.onChange = () => { if (vs !== v) return; if (v.phase === 'lobby') lobby(); else if (v.phase === 'char') vsPanels(); };
+  room.onJoin = () => { sound.confirm(); vsSync(); };
+  room.onCmd = vsCmd; room.onDrop = vsDrop; room.onBack = vsBack;
+  lobby();
+}
+function vsClose() {
+  if (!vs) return; vs.room?.close(); clearInterval(vs.timer); vs = null; app.mode = 'quick';
+}
+
+function lobby() {
+  const v = vs!, r = v.room!; v.phase = 'lobby'; endFight();
+  const all = r.slots.every(i => r.ready(i));
+  const slot = (i: number) => {
+    if (!r.remote(i)) return `<div class="slot ok"><b>${pname(i)}</b><span>${T('Sentuh di layar ini', 'Touch on this screen')}</span><i>${T('Siap', 'Ready')}</i></div>`;
+    const p = r.peers[i];
+    if (!p) return `<div class="slot"><b>${pname(i)}</b><span class="mut">${T('Menunggu kontroler…', 'Waiting for a controller…')}</span><i>${T('Menunggu', 'Waiting')}</i></div>`;
+    return `<div class="slot ${p.up ? 'ok' : 'bad'}"><b>${pname(i)}</b><span>${esc(p.name)} <span data-sig="${i}">${sigIcon(r.sig(i))}</span></span><i>${p.up ? T('Terhubung', 'Connected') : T('Terputus…', 'Reconnecting…')}</i></div>`;
+  };
+  show(`<div class="title"><h2>${T('Lobi', 'Lobby')}</h2><span class="mut">${T('Main Bareng', 'Versus')} · ${cfgName(v.cfg)}</span></div>
+    <div class="lobby"><div class="panel codebox"><span class="mut">${T('Kode ruangan', 'Room code')}</span>
+      <div class="code" aria-label="${[...r.code].join(' ')}">${[...r.code].map(c => `<b>${c}</b>`).join('')}</div>
+      <button class="btn sm" data-a="regen">${T('Buat ulang kode', 'New code')}</button>
+      <ol class="steps"><li>${T('Di HP lain buka <b>Main Bareng → Gabung sebagai Kontroler</b>', 'On another phone open <b>Versus → Join as Controller</b>')}</li><li>${T('Masukkan kode di atas', 'Enter the code above')}</li><li>${T('Izinkan permintaannya di layar ini', 'Approve the request on this screen')}</li></ol>
+      <p class="mut">${T('Wi-Fi yang sama atau hotspot salah satu HP · tanpa internet', 'Same Wi-Fi or one phone\'s hotspot · no internet')}</p></div>
+      <div class="slots">${slot(0)}${slot(1)}${all ? `<p class="go">${T('Semua pemain terhubung!', 'Everyone is connected!')}</p>` : ''}</div></div>
+    <div class="foot"><button class="btn" data-a="back">${T('Tutup Ruangan', 'Close Room')}</button><button class="btn pri" data-a="ok" ${all ? '' : 'disabled'}>${T('Lanjut', 'Next')}</button></div>`, 'dim', {
+    regen: () => r.regen(), back: () => vsMenu(), ok: () => vsSelect(),
+  });
+  const q = r.reqs[0];
+  if (q) modal(`<h2>${T('Permintaan bergabung', 'Join request')}</h2><p><b>${esc(q.name)}</b> ${T('ingin bergabung sebagai kontroler.', 'wants to join as a controller.')}</p>
+    <div class="mbtns"><button class="btn pri" data-a="yes">${T('Izinkan', 'Allow')}</button><button class="btn" data-a="no">${T('Tolak', 'Deny')}</button></div>`, { yes: () => r.approve(q.conn, true), no: () => r.approve(q.conn, false) });
+  // semua kontroler sudah masuk: lanjut otomatis ke pilih karakter
+  clearTimeout(v.advT); if (all && !q) v.advT = setTimeout(() => { if (vs === v && v.phase === 'lobby' && r.slots.every(i => r.ready(i))) vsSelect(); }, 1200) as unknown as number;
+  vsSync();
+}
+
+function vsSelect(unready = false) {
+  const v = vs!; v.phase = 'char'; endFight(); sound.music('menu');
+  if (unready) v.ready = [false, false];
+  show(`<div class="title"><h2>${T('Pilih Karakter', 'Choose Fighters')}</h2><span class="mut">${T('Main Bareng', 'Versus')} · ${T('karakter yang sama boleh dipilih berdua', 'both players may pick the same fighter')}</span></div>
+    <div class="vsel"><div class="panel vsp" id="vp0"></div><span class="grow"></span><div class="panel vsp" id="vp1"></div></div>
+    <div class="foot"><button class="btn" data-a="back">${T('Kembali', 'Back')}</button><span class="mut">${T('Lanjut ke arena saat kedua pemain siap', 'Continues once both players are ready')}</span></div>`, 'vssel', {
+    pick: (id, el) => { const i = +el.dataset.p!; if (v.ready[i]) return; v.picks[i] = id; vsPanels(); vsSync(); },
+    ready: val => { const i = +val; v.ready[i] = !v.ready[i]; vsAfterReady(); },
+    back: () => v.room ? lobby() : vsMenu(),
+  });
+  vsPanels(); vsSync();
+}
+function vsPanels() {
+  const v = vs!; stage.showDuo(charById(v.picks[0]), charById(v.picks[1])); stage.showSpin = 0;
+  for (const i of [0, 1]) {
+    const el = $('#vp' + i); if (!el) return; const c = charById(v.picks[i]), rem = remote(i), p = v.room?.peers[i];
+    el.setAttribute('style', elVar(c.elem)); el.classList.toggle('rdy', v.ready[i]);
+    const who = rem ? (p ? `${esc(p.name)} <span data-sig="${i}">${sigIcon(v.room!.sig(i))}</span>` : T('Terputus', 'Disconnected')) : T('Layar ini', 'This screen');
+    el.innerHTML = `<div class="pn"><b>${pname(i)}</b><span class="mut">${who}</span></div>
+      <h3>${c.name}</h3><div class="row">${etag(c.elem)}${i === 1 && v.picks[0] === v.picks[1] ? `<span class="mut">${T('warna ke-2', 'alt colors')}</span>` : ''}</div>
+      ${v.ready[i] ? `<div class="rd">✓ ${T('Siap', 'Ready')}</div>` : rem ? `<p class="mut">${T('Memilih di HP-nya…', 'Choosing on their phone…')}</p>` : ''}
+      ${rem ? '' : `<div class="mini">${save.chars.map(id => { const x = charById(id); return `<button class="th ${id === c.id ? 'sel' : ''}" data-a="pick" data-p="${i}" data-v="${id}" style="${elVar(x.elem)};background-image:url(${portraits[id]})" aria-label="${x.name}">${icon(x.elem)}</button>`; }).join('')}</div>
+        <button class="btn sm ${v.ready[i] ? '' : 'pri'}" data-a="ready" data-v="${i}">${v.ready[i] ? T('Batal', 'Cancel') : T('Siap', 'Ready')}</button>`}`;
+  }
+}
+function vsAfterReady() {
+  const v = vs!; vsPanels(); vsSync();
+  if (v.ready[0] && v.ready[1]) { sound.confirm(); setTimeout(() => { if (vs === v && v.phase === 'char' && v.ready[0] && v.ready[1]) { v.phase = 'arena'; arenaScreen(); } }, 500); }
+}
+function vsGo(same = false) {
+  const v = vs!; sound.confirm(); v.phase = 'fight'; v.bots = [null, null];
+  if (!same) v.arenaId = app.arena === 'random' ? save.arenas[Math.floor(Math.random() * save.arenas.length)] : app.arena;
+  startFight(v.picks[1], v.arenaId, 1, v.picks[0]); vsSync();
+}
+function vsControls(f: Fight) {
+  const v = vs!, m = f.m;
+  if (v.cfg === 'A') { f.ctls = [new Controls(ui, m.f[0].elem, { side: 'l', keys: KEYMAP.p1 }), new Controls(ui, m.f[1].elem, { side: 'r', keys: KEYMAP.p2 })]; f.ctlSlot = [0, 1]; }
+  else if (v.cfg === 'B') { f.ctls = [new Controls(ui, m.f[0].elem)]; f.ctlSlot = [0]; }
+  else { f.ctls = []; f.ctlSlot = []; f.hud!.el.classList.add('big'); }
+  if (v.room) f.hud!.el.insertAdjacentHTML('beforeend', `<div class="vsig">${[0, 1].map(i => `<span class="p${i + 1}">${remote(i) ? `<span data-sig="${i}">${sigIcon(v.room!.sig(i))}</span>` : ''}</span>`).join('')}</div>`);
+}
+function vsInput(f: Fight, i: number): Input {
+  const v = vs; if (!v) return noInput();
+  const b = v.bots[i]; if (b) return b.update(STEP, f.m.f[i], f.m.f[1 - i], f.m);
+  if (remote(i)) return v.room!.input[i].read();
+  const k = f.ctlSlot.indexOf(i); return k >= 0 ? f.ctls[k].read() : noInput();
+}
+/** HP, energi, cooldown untuk layar kontroler (15×/dtk, juga saat dijeda agar sambungan tetap hidup). */
+function vsFeedback(t: number) {
+  const v = vs, f = fight; if (!v?.room || !f || v.phase !== 'fight' || t - v.fbT < 66) return; v.fbT = t;
+  for (const i of v.room.slots) { const x = f.m.f[i]; v.room.fb(i, { hp: Math.round(Math.max(0, x.hp)), mh: x.def.hp, en: Math.round(x.energy), c1: +(x.cd1 / x.def.moves.s1.cd!).toFixed(2), c2: +(x.cd2 / x.def.moves.s2.cd!).toFixed(2), st: +x.stam.toFixed(2), w: f.m.wins }); }
+}
+function vsPauseModal() {
+  const f = fight!; f.pauseEl?.remove(); const by = f.pauseBy;
+  f.pauseEl = modal(`<h2>${T('Jeda', 'Paused')}</h2><p>${by < 0 ? T('Dijeda dari layar ini.', 'Paused from this screen.') : T(`Dijeda oleh ${pname(by)}.`, `Paused by ${pname(by)}.`)}
+    ${by >= 0 && remote(by) ? T(' Lanjutkan dari HP pemain itu atau dari layar ini.', ' Resume from that player\'s phone or from this screen.') : ''}</p>
+    ${movesHtml(f.m.f[0].def)}
+    <div class="mbtns"><button class="btn pri" data-a="resume">${T('Lanjutkan', 'Resume')}</button><button class="btn" data-a="restart">${T('Ulangi', 'Restart')}</button><button class="btn" data-a="quit">${T('Keluar', 'Quit')}</button></div>`, {
+    resume: () => vsResume(-1), restart: () => vsGo(true), quit: () => vsSelect(true),
+  });
+  vsSync();
+}
+function vsResume(by: number) {
+  const f = fight; if (!f || !f.paused || f.dropSlot >= 0) return;
+  if (by >= 0 && by !== f.pauseBy) return; // hanya pemain yang menjeda (atau host) yang bisa melanjutkan
+  f.pauseEl?.remove(); f.pauseEl = null; f.paused = false; vs?.room?.input.forEach(x => x.release()); vsSync();
+}
+function vsCmd(slot: number, m: { a: string; v?: any }) {
+  const v = vs; if (!v) return;
+  if (m.a === 'leave') { v.room!.kick(slot); return vsGone(slot); }
+  if (v.phase === 'char') {
+    if (m.a === 'pick' && !v.ready[slot] && save.chars.includes(m.v)) { v.picks[slot] = m.v; vsPanels(); vsSync(); }
+    else if (m.a === 'ready') { v.ready[slot] = !!m.v; vsAfterReady(); }
+  } else if (v.phase === 'arena' && slot === 0) {
+    if (m.a === 'pick' && (m.v === 'random' || save.arenas.includes(m.v))) { app.arena = m.v; arenaScreen(true); }
+    else if (m.a === 'pure') { app.pure = !!m.v; arenaScreen(true); }
+    else if (m.a === 'ok' && (app.arena === 'random' || save.arenas.includes(app.arena))) vsGo();
+    else if (m.a === 'back') vsSelect(true);
+  } else if (v.phase === 'fight') {
+    if (m.a === 'pause') pause(slot); else if (m.a === 'resume') vsResume(slot);
+  } else if (v.phase === 'result' && slot === 0 && v.cfg === 'C') vsResAction(String(m.v));
+}
+function vsDrop(slot: number) {
+  const v = vs!, f = fight;
+  if (v.phase === 'fight' && f && f.m.phase !== 'over' && !v.bots[slot]) {
+    if (!f.paused) { f.paused = true; f.pauseBy = slot; }
+    f.dropSlot = slot; vsDropModal(slot, performance.now() + RECONNECT_WAIT);
+  } else toast(`${pname(slot)} ${T('terputus — menunggu sambung ulang', 'disconnected — waiting to reconnect')}`);
+  vsSync();
+}
+const RECONNECT_WAIT = 15000;
+function vsDropModal(slot: number, until: number) {
+  const f = fight!; f.pauseEl?.remove();
+  const o = f.pauseEl = modal(`<h2>${pname(slot)} ${T('terputus', 'disconnected')}</h2><p class="dm"></p><div class="mbtns"></div>`, {
+    bot: () => { vs!.bots[slot] = new Bot(BOT_LEVELS[1]); f.dropSlot = -1; o.remove(); f.pauseEl = null; f.paused = false; vsSync(); },
+    end: () => { vs!.room!.kick(slot); vsGone(slot); },
+  });
+  const tick = () => {
+    if (f.pauseEl !== o || !o.isConnected) return;
+    const left = Math.ceil((until - performance.now()) / 1000);
+    if (left > 0) { $('.dm', o).textContent = T(`Pertandingan dijeda. Menunggu kontroler tersambung kembali… ${left}`, `Match paused. Waiting for the controller to reconnect… ${left}`); setTimeout(tick, 250); return; }
+    $('.dm', o).textContent = T('Kontroler tidak tersambung kembali. Lanjutkan melawan bot atau akhiri pertandingan?', 'The controller did not reconnect. Continue against a bot or end the match?');
+    $('.mbtns', o).innerHTML = `<button class="btn pri" data-a="bot">${T('Lanjut lawan Bot', 'Continue vs Bot')}</button><button class="btn" data-a="end">${T('Akhiri', 'End match')}</button>`;
+  };
+  tick();
+}
+/** Kontroler keluar atau dilepas: kembali ke lobi agar kontroler lain bisa masuk. */
+function vsGone(slot: number) {
+  const v = vs!; toast(`${pname(slot)} ${T('keluar dari ruangan', 'left the room')}`);
+  if (v.phase === 'fight' && fight && fight.m.phase !== 'over') { fight.dropSlot = slot; vsDropModal(slot, 0); return; }
+  v.ready = [false, false];
+  if (v.phase !== 'result') lobby(); // di layar hasil: tetap tampil, lobi dibuka saat pilihan berikutnya
+  else vsSync();
+}
+function vsBack(slot: number) {
+  const v = vs!, f = fight; toast(`${pname(slot)} ${T('tersambung kembali', 'reconnected')}`); v.bots[slot] = null;
+  if (v.phase === 'fight' && f && f.dropSlot === slot) { f.dropSlot = -1; f.pauseBy = slot; vsPauseModal(); }
+  vsSync();
+}
+function vsTick() {
+  const v = vs; if (!v?.room) return; const r = v.room;
+  for (const el of $$('[data-sig]')) { const i = +el.dataset.sig!, h = sigIcon(r.sig(i)); if (el.innerHTML !== h) el.innerHTML = h; }
+  // di luar pertarungan, kontroler yang terputus lebih dari 15 detik dilepas dari slotnya
+  for (const i of r.slots) { const p = r.peers[i]; if (p && !p.up && performance.now() - p.dropAt > RECONNECT_WAIT && v.phase !== 'fight') { r.kick(i); vsGone(i); } }
+}
+/** Mengirim layar yang sedang aktif ke tiap kontroler. */
+function vsSync() {
+  const v = vs, r = v?.room; if (!v || !r) return;
+  for (const i of r.slots) {
+    let s: object;
+    switch (v.phase) {
+      case 'lobby': s = { s: 'lobby' }; break;
+      case 'char': s = { s: 'char', ids: save.chars, pick: v.picks[i], ready: v.ready[i], other: v.ready[1 - i] }; break;
+      case 'arena': s = i === 0 ? { s: 'arena', ids: ['random', ...save.arenas], pick: app.arena, pure: app.pure } : { s: 'wait', w: 'arena' }; break;
+      case 'fight': { const f = fight; s = f?.paused ? { s: 'pause', by: f.pauseBy, drop: f.dropSlot, id: v.picks[i] } : { s: 'fight', id: v.picks[i] }; break; }
+      default: s = { s: 'result', ...v.result!, ctl: v.cfg === 'C' && i === 0 };
+    }
+    r.send(i, { t: 'scr', slot: i, cfg: v.cfg, ...s });
+  }
+}
+function vsResult(winner: number) {
+  const f = fight, v = vs; if (!f || !v) return;
+  f.hud?.destroy(); f.ctls.forEach(c => c.destroy()); f.hud = null; f.ctls = [];
+  const m = f.m; v.phase = 'result'; v.result = { winner, score: `${m.wins[0]}–${m.wins[1]}` };
+  if (save.mp.date !== today()) save.mp = { date: today(), n: 0 };
+  const earn = save.mp.n < MP_DAILY ? MP_COINS : 0; if (earn) { save.mp.n++; save.coins += earn; setTimeout(() => sound.coin(), 700); }
+  persist(); sound.win();
+  const col = winner < 0 ? '#ffd166' : hex(ELEMS[m.f[winner].def.elem].col);
+  ui.innerHTML = `<div class="panel result" style="--el:${col}"><h1>${winner < 0 ? T('Seri', 'Draw') : pname(winner) + T(' Menang!', ' Wins!')}</h1>
+    <p class="mut">${m.f[0].def.name} ${m.wins[0]} – ${m.wins[1]} ${m.f[1].def.name} · ${tr(m.arena.name)}</p>
+    <div class="earn"><div><span>${T('Koin Main Bareng', 'Versus coins')} <small class="mut">(${save.mp.n}/${MP_DAILY} ${T('hari ini', 'today')})</small></span><span class="coins">+${earn}</span></div>
+      ${earn ? '' : `<div><span class="mut">${T('Batas koin Main Bareng hari ini sudah tercapai.', 'Today\'s versus coin limit has been reached.')}</span></div>`}<div><b>${T('Total koin', 'Total coins')}</b>${coins()}</div></div>
+    <div class="row" style="flex-wrap:wrap"><button class="btn pri" data-a="again">Rematch</button><button class="btn sm" data-a="char">${T('Ganti Karakter', 'Change Fighters')}</button><button class="btn sm" data-a="arena">${T('Ganti Arena', 'Change Arena')}</button><button class="btn sm" data-a="close">${v.room ? T('Tutup Ruangan', 'Close Room') : 'Menu'}</button></div></div>`;
+  bind(ui.firstElementChild as HTMLElement, { again: () => vsResAction('again'), char: () => vsResAction('char'), arena: () => vsResAction('arena'), close: () => vsResAction('close') });
+  vsSync();
+}
+function vsResAction(a: string) {
+  const v = vs; if (!v || v.phase !== 'result') return;
+  if (a === 'close') return menu();
+  if (v.room && !v.room.slots.every(i => v.room!.ready(i))) return lobby(); // ada kontroler yang keluar: tunggu pengganti
+  if (a === 'again') vsGo(true);
+  else if (a === 'char') vsSelect(true);
+  else if (a === 'arena') { endFight(); v.phase = 'arena'; arenaScreen(); }
+}
+
 // ---------- loop ----------
-let last = performance.now(), pending = 0;
+let last = performance.now(), pending = 0, idle = false;
 function frame(now: number) {
   requestAnimationFrame(frame);
   pending += Math.min(.1, (now - last) / 1000); last = now;
@@ -366,21 +636,19 @@ function frame(now: number) {
     else {
       const ts = m.slowmo > 0 ? .3 : 1; m.slowmo = Math.max(0, m.slowmo - rdt);
       f.acc = Math.min(.1, f.acc + rdt * ts);
-      while (f.acc >= STEP) {
-        const i0 = f.demo ? f.demo.update(STEP, m.f[0], m.f[1], m) : f.ctl ? f.ctl.read() : undefined;
-        m.step(STEP, i0 || { mx: 0, up: false, down: false, atk: false, s1: false, s2: false, block: false, dash: false, ult: false }, f.bot.update(STEP, m.f[1], m.f[0], m));
-        f.acc -= STEP;
-      }
-      f.ctl?.sync(m.f[0]); f.hud?.update(rdt);
+      while (f.acc >= STEP) { const i0 = f.src[0](), i1 = f.src[1](); m.step(STEP, i0, i1); f.acc -= STEP; }
+      f.ctls.forEach((c, k) => c.sync(m.f[f.ctlSlot[k]])); f.hud?.update(rdt);
     }
     f.view.update(rdt, rdt);
   }
-  stage.render(f && f.paused ? 0 : rdt);
+  if (f) vsFeedback(now);
+  if (!idle) stage.render(f && f.paused ? 0 : rdt);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) { pause(); sound.suspend(true); } else sound.suspend(false); });
 addEventListener('contextmenu', e => e.preventDefault());
 
 applySettings();
+initScreen();
 requestAnimationFrame(frame);
 splash();
-(window as any).__ec = { app, save, stage, startFight, menu, select, opponent, arenaScreen, story, settings, collection, result, get fight() { return fight; } };
+(window as any).__ec = { app, save, stage, startFight, menu, select, opponent, arenaScreen, story, settings, collection, result, vsMenu, get fight() { return fight; }, get vs() { return vs; } };

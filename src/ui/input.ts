@@ -1,12 +1,19 @@
 // Kontrol pemain: joystick virtual + tombol sentuh (landscape) dan keyboard untuk desktop.
 import { Fighter, Input, noInput, MAX_STAM } from '../game/fighter';
+import type { Elem } from '../data';
 import { save, T } from '../save';
 import { icon, SVG, elVar } from './dom';
 
-const KEYS: Record<string, string> = {
-  KeyA: 'l', ArrowLeft: 'l', KeyD: 'r', ArrowRight: 'r', KeyW: 'u', ArrowUp: 'u', KeyS: 'd', ArrowDown: 'd',
-  KeyJ: 'atk', KeyK: 's1', KeyL: 's2', KeyI: 'block', Space: 'block', KeyO: 'dash', ShiftLeft: 'dash', ShiftRight: 'dash', KeyU: 'ult',
+const P1: Record<string, string> = { KeyA: 'l', KeyD: 'r', KeyW: 'u', KeyS: 'd', KeyJ: 'atk', KeyK: 's1', KeyL: 's2', KeyI: 'block', Space: 'block', KeyO: 'dash', ShiftLeft: 'dash', KeyU: 'ult' };
+const P2: Record<string, string> = {
+  ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd', Numpad1: 'atk', Comma: 'atk', Numpad2: 's1', Period: 's1', Numpad3: 's2', Slash: 's2',
+  Numpad0: 'block', Quote: 'block', NumpadDecimal: 'dash', ShiftRight: 'dash', Numpad5: 'ult', Semicolon: 'ult',
 };
+/** Peta tombol keyboard: satu pemain memakai semuanya; dua pemain di satu layar dibagi kiri/kanan. */
+export const KEYMAP = { solo: { ...P2, ...P1 }, p1: P1, p2: P2 };
+/** Status ringkas untuk tombol: cooldown (0–1), energi (0–100), stamina. */
+export interface PadStat { c1: number; c2: number; en: number; st: number }
+export const padStat = (f: Fighter): PadStat => ({ c1: f.cd1 / f.def.moves.s1.cd!, c2: f.cd2 / f.def.moves.s2.cd!, en: f.energy, st: f.stam });
 type Edge = 'atk' | 's1' | 's2' | 'dash' | 'ult';
 
 export class Controls {
@@ -14,15 +21,17 @@ export class Controls {
   private sx = 0; private sy = 0; private stickId = -1; private ox = 0; private oy = 0; private btn: Record<string, HTMLElement> = {};
   onPause: () => void = () => { }; enabled = true;
 
-  constructor(parent: HTMLElement, f: Fighter) {
-    const el = this.el = document.createElement('div'); el.className = 'ctl auto'; el.setAttribute('style', elVar(f.elem));
+  private keys: Record<string, string>;
+  constructor(parent: HTMLElement, elem: Elem, o: { side?: 'l' | 'r'; keys?: Record<string, string> | null } = {}) {
+    this.keys = o.keys === undefined ? KEYMAP.solo : o.keys || {};
+    const el = this.el = document.createElement('div'); el.className = 'ctl auto' + (o.side ? ' half ' + o.side : ''); el.setAttribute('style', elVar(elem));
     el.innerHTML = `<div class="stick-zone"><div class="stick-base"><div class="stick-knob"></div></div></div>
       <div class="btns">
         <button class="cb dsh" data-k="dash" aria-label="Dash">${SVG.dsh}<small>DASH</small></button>
         <button class="cb blk" data-k="block" aria-label="${T('Tangkis', 'Block')}">${SVG.blk}</button>
-        <button class="cb s1" data-k="s1" aria-label="${T('Jurus 1', 'Skill 1')}">${icon(f.def.elem)}<small>1</small><i class="cd"></i></button>
-        <button class="cb s2" data-k="s2" aria-label="${T('Jurus 2', 'Skill 2')}">${icon(f.def.elem)}<small>2</small><i class="cd"></i></button>
-        <button class="cb ult" data-k="ult" aria-label="${T('Pamungkas', 'Ultimate')}">${SVG.ult}</button>
+        <button class="cb s1" data-k="s1" aria-label="${T('Jurus 1', 'Skill 1')}">${icon(elem)}<small>1</small><i class="cd"></i></button>
+        <button class="cb s2" data-k="s2" aria-label="${T('Jurus 2', 'Skill 2')}">${icon(elem)}<small>2</small><i class="cd"></i></button>
+        <div class="enr"></div><button class="cb ult" data-k="ult" aria-label="${T('Pamungkas', 'Ultimate')}">${SVG.ult}</button>
         <button class="cb atk" data-k="atk" aria-label="${T('Serang', 'Attack')}">${SVG.atk}</button>
       </div>`;
     parent.appendChild(el); this.applySettings();
@@ -51,11 +60,11 @@ export class Controls {
   }
   private kd = (e: KeyboardEvent) => {
     if (e.code === 'Escape' || e.code === 'KeyP') { this.onPause(); return; }
-    const k = KEYS[e.code]; if (!k) return; e.preventDefault();
+    const k = this.keys[e.code]; if (!k) return; e.preventDefault();
     if (!e.repeat && (k === 'atk' || k === 's1' || k === 's2' || k === 'dash' || k === 'ult')) this.edge[k] = true;
     this.held[k] = true;
   };
-  private ku = (e: KeyboardEvent) => { const k = KEYS[e.code]; if (k) this.held[k] = false; };
+  private ku = (e: KeyboardEvent) => { const k = this.keys[e.code]; if (k) this.held[k] = false; };
 
   applySettings() {
     const c = save.ctrl, s = this.el.style;
@@ -72,10 +81,11 @@ export class Controls {
     return i;
   }
   /** Memperbarui cooldown jurus dan tombol pamungkas. */
-  sync(f: Fighter) {
-    this.btn.s1.style.setProperty('--p', String(f.cd1 / f.def.moves.s1.cd!)); this.btn.s2.style.setProperty('--p', String(f.cd2 / f.def.moves.s2.cd!));
-    this.btn.ult.classList.toggle('ready', f.energy >= 100);
-    const low = f.stam < 1; this.btn.dash.style.opacity = low ? '.35' : ''; this.btn.block.style.opacity = f.stam < MAX_STAM * .34 ? '.5' : '';
+  sync(f: Fighter | PadStat) {
+    const s = f instanceof Fighter ? padStat(f) : f;
+    this.btn.s1.style.setProperty('--p', String(s.c1)); this.btn.s2.style.setProperty('--p', String(s.c2));
+    this.btn.ult.classList.toggle('ready', s.en >= 100); this.el.classList.toggle('ultok', s.en >= 100); this.el.style.setProperty('--en', String(Math.min(100, s.en) / 100));
+    const low = s.st < 1; this.btn.dash.style.opacity = low ? '.35' : ''; this.btn.block.style.opacity = s.st < MAX_STAM * .34 ? '.5' : '';
   }
   destroy() { removeEventListener('keydown', this.kd); removeEventListener('keyup', this.ku); this.el.remove(); }
 }

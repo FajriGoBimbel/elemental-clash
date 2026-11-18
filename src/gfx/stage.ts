@@ -18,7 +18,7 @@ export class Stage {
   quality = 1; fpsCap = 60; time = 0;
   private composer?: EffectComposer; private bloom?: UnrealBloomPass;
   private show?: { model: CharModel; ped: THREE.Group; yaw: number; x: number; pose: Float32Array; elem: Elem };
-  showSpin = 0;
+  showSpin = 0; private duo?: { key: string; models: CharModel[]; pose: Float32Array };
 
   constructor(public canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -62,7 +62,7 @@ export class Stage {
       this.content.remove(c);
       c.traverse(o => { const m = o as THREE.Mesh; if (m.geometry) m.geometry.dispose(); });
     }
-    this.fx.clear(); this.show = undefined;
+    this.fx.clear(); this.show = undefined; this.duo = undefined;
   }
 
   // ----- Mode pajang (menu, pilih karakter, koleksi) -----
@@ -89,6 +89,22 @@ export class Stage {
     this.showEnv(def.elem); this.tintLocked(locked);
     model.apply(this.show.pose, 0, 1, 0);
   }
+  /** Dua petarung berdampingan (pilih karakter Main Bareng). */
+  showDuo(a: CharDef, b: CharDef) {
+    const key = a.id + '|' + b.id; if (this.duo?.key === key) return;
+    this.clear();
+    for (const [i, def] of [a, b].entries()) {
+      const E = ELEMS[def.elem], x = i ? 2.15 : -2.15;
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.25, .22, 40), new THREE.MeshLambertMaterial({ color: 0x1a1d2e })); base.position.set(x, -.11, 0);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.06, .035, 8, 60), new THREE.MeshBasicMaterial({ color: E.col })); ring.rotation.x = Math.PI / 2; ring.position.set(x, .01, 0);
+      this.content.add(base, ring);
+    }
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(30, 40), new THREE.MeshLambertMaterial({ color: 0x14162a })); floor.rotation.x = -Math.PI / 2; floor.position.y = -.22; this.content.add(floor);
+    const models = [new CharModel(a), new CharModel(b, b.elem, a.id === b.id)];
+    models.forEach((m, i) => { m.group.position.x = i ? 2.15 : -2.15; m.group.rotation.y = i ? -.55 : .55; this.content.add(m.group); });
+    this.duo = { key, models, pose: P() };
+    this.setEnv({ sky: [0x070914, shade(ELEMS[a.elem].col, .3), shade(ELEMS[b.elem].col, .45)], fog: [0x15182c, 14, 50], hemi: [0xffffff, 0x3a3f66, 1.35], sun: [0xffffff, 1.7] });
+  }
   private tintLocked(l: boolean) { this.show?.model.flash(l ? -.75 : 0); }
   rotateShow(d: number) { if (this.show) this.show.yaw += d; }
 
@@ -107,6 +123,11 @@ export class Stage {
   render(dt: number) {
     this.time += dt;
     if (this.show) this.updateShow(dt);
+    else if (this.duo) {
+      const d = this.duo; poseFor({ state: 'show', u: 0, st: 0, t: this.time, vy: 0, walkPh: 0, back: false, landed: false, alt: false }, d.pose);
+      d.models.forEach((m, i) => { m.apply(d.pose, dt, 8, this.time + i * 1.3); if (Math.random() < .35) this.fx.elemPuff(m.def.elem, m.group.position.x + (Math.random() - .5) * 2, .1 + Math.random() * 2, (Math.random() - .5), 1); });
+      const z = 7.6 * Math.max(1, 1.6 / this.camera.aspect); this.camera.position.set(0, 1.3, z); this.camera.lookAt(0, .95, 0);
+    }
     this.fx.update(dt);
     if (this.quality === 2 && this.composer) this.composer.render(); else this.renderer.render(this.scene, this.camera);
   }

@@ -8,13 +8,15 @@ export interface Save {
   ctrl: { size: number; opacity: number; margin: number; swap: boolean };
   lastChar: string; level: number; story: Record<string, number>; ease: Record<string, number>;
   streak: number; daily: { date: string; done: boolean }; wins: number; losses: number; tutorial: boolean;
+  /** jumlah pertandingan Main Bareng berhadiah koin hari ini */
+  mp: { date: string; n: number };
 }
 const KEY = 'elemental-clash-save', SECRET = 0x9e3779b9;
 const fresh = (): Save => ({
   v: 1, coins: 200, chars: ['aqualis', 'pyrra', 'terrok'], arenas: ['kuil', 'magma', 'gunung', 'dojo'],
   lang: (navigator.language || 'id').startsWith('id') ? 'id' : 'en', gfx: 1, sfx: .8, music: .5, haptic: true, cb: false, text: 1,
   ctrl: { size: 1, opacity: .75, margin: 0, swap: false }, lastChar: 'aqualis', level: 1, story: {}, ease: {},
-  streak: 0, daily: { date: '', done: false }, wins: 0, losses: 0, tutorial: false,
+  streak: 0, daily: { date: '', done: false }, wins: 0, losses: 0, tutorial: false, mp: { date: '', n: 0 },
 });
 
 function stream(len: number) { let s = SECRET; const o = new Uint8Array(len); for (let i = 0; i < len; i++) { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; o[i] = s & 255; } return o; }
