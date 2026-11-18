@@ -388,7 +388,7 @@ function vsMenu() {
   const sock = getSock(), lan = !!sock;
   const card = (k: Cfg, t: string, d: string, n: string, need: boolean) => `<button class="vcard" data-a="cfg" data-v="${k}" ${need && !lan ? 'disabled' : ''}>
     <span class="dev">${'<i></i>'.repeat(k === 'A' ? 1 : k === 'B' ? 2 : 3)}</span><h3>${t}</h3><p>${d}</p><small>${n}</small></button>`;
-  show(`<div class="title"><h2>${T('Main Bareng', 'Versus')}</h2><span class="mut">${T('1 lawan 1 dengan teman · tanpa internet', '1v1 with a friend · no internet needed')}</span></div>
+  show(`<div class="title"><h2>${T('Main Bareng', 'Versus')}</h2><span class="mut">${sock?.kind === 'web' ? T('1 lawan 1 dengan teman', '1v1 with a friend') : T('1 lawan 1 dengan teman · tanpa internet', '1v1 with a friend · no internet needed')}</span></div>
     <div class="vcards">
       ${card('A', T('Satu Layar', 'One Screen'), T('Berdua bermain sentuh di layar ini. Paling nyaman di tablet.', 'Both players use touch on this screen. Best on a tablet.'), T('1 perangkat', '1 device'), false)}
       ${card('B', T('Layar + 1 Kontroler', 'Screen + 1 Controller'), T('Pemain 1 sentuh di layar ini, Pemain 2 memakai HP-nya sebagai joystick.', 'Player 1 uses touch here, Player 2 uses their phone as a gamepad.'), T('2 perangkat', '2 devices'), true)}
@@ -396,7 +396,9 @@ function vsMenu() {
       <button class="vcard join" data-a="join" ${lan ? '' : 'disabled'}><span class="dev pad">${SVG_PAD}</span><h3>${T('Gabung sebagai Kontroler', 'Join as Controller')}</h3><p>${T('Masukkan kode ruangan dari layar host. HP ini menjadi joystick dan tombol.', 'Enter the room code from the host screen. This phone becomes the gamepad.')}</p><small>${T('HP ini', 'This phone')}</small></button>
     </div>
     <p class="vnote ${lan ? '' : 'warn'}">${lan
-      ? T('Semua perangkat harus di Wi-Fi yang sama, atau sambungkan ke hotspot salah satu HP. Kuota internet tidak terpakai.', 'All devices must share one Wi-Fi network, or join one phone\'s hotspot. No mobile data is used.') + (sock!.kind !== 'native' ? ` <span class="mut">(${sock!.kind === 'relay' ? T('mode uji: relay server dev', 'test mode: dev server relay') : T('mode uji: antar-tab', 'test mode: between tabs')})</span>` : '')
+      ? sock!.kind === 'web'
+        ? T('Versi web: semua perangkat butuh internet sebentar untuk saling terhubung, lalu data permainan dikirim langsung antar-perangkat. Paling lancar bila semua di Wi-Fi yang sama. Untuk main tanpa internet sama sekali, pakai aplikasi Android.', 'Web version: devices need internet briefly to find each other, then game data flows directly between them. Smoothest on the same Wi-Fi. To play fully offline, use the Android app.')
+        : T('Semua perangkat harus di Wi-Fi yang sama, atau sambungkan ke hotspot salah satu HP. Kuota internet tidak terpakai.', 'All devices must share one Wi-Fi network, or join one phone\'s hotspot. No mobile data is used.') + (sock!.kind !== 'native' ? ` <span class="mut">(${sock!.kind === 'relay' ? T('mode uji: relay server dev', 'test mode: dev server relay') : T('mode uji: antar-tab', 'test mode: between tabs')})</span>` : '')
       : T('Kontroler HP membutuhkan aplikasi Android Elemental Clash; versi browser tidak bisa membuka jaringan lokal. Mode Satu Layar tetap bisa dimainkan.', 'Phone controllers need the Elemental Clash Android app; the browser version cannot open local network sockets. One Screen mode still works.')}</p>
     <div class="foot"><button class="btn" data-a="back">${T('Kembali', 'Back')}</button></div>`, 'dim', {
     cfg: v => vsStart(v as Cfg), back: () => menu(),
@@ -417,7 +419,9 @@ async function vsStart(cfg: Cfg) {
   if (cfg === 'A') return vsSelect();
   const sock = getSock()!, room = new HostRoom(sock, cfg === 'B' ? [1] : [0, 1], await sock.name());
   try { await room.open(); } catch {
-    vsClose(); toast(T('Gagal membuka ruangan. Pastikan Wi-Fi atau hotspot menyala, lalu coba lagi.', 'Could not open the room. Make sure Wi-Fi or hotspot is on, then try again.')); return vsMenu();
+    vsClose(); toast(sock.kind === 'web'
+      ? T('Gagal membuka ruangan. Versi web butuh internet untuk menyambungkan perangkat — periksa koneksi lalu coba lagi.', 'Could not open the room. The web version needs internet to pair devices — check the connection and try again.')
+      : T('Gagal membuka ruangan. Pastikan Wi-Fi atau hotspot menyala, lalu coba lagi.', 'Could not open the room. Make sure Wi-Fi or hotspot is on, then try again.')); return vsMenu();
   }
   if (vs !== v) { room.close(); return; }
   v.room = room;
@@ -444,7 +448,7 @@ function lobby() {
       <div class="code" aria-label="${[...r.code].join(' ')}">${[...r.code].map(c => `<b>${c}</b>`).join('')}</div>
       <button class="btn sm" data-a="regen">${T('Buat ulang kode', 'New code')}</button>
       <ol class="steps"><li>${T('Di HP lain buka <b>Main Bareng → Gabung sebagai Kontroler</b>', 'On another phone open <b>Versus → Join as Controller</b>')}</li><li>${T('Masukkan kode di atas', 'Enter the code above')}</li><li>${T('Izinkan permintaannya di layar ini', 'Approve the request on this screen')}</li></ol>
-      <p class="mut">${T('Wi-Fi yang sama atau hotspot salah satu HP · tanpa internet', 'Same Wi-Fi or one phone\'s hotspot · no internet')}</p></div>
+      <p class="mut">${getSock()?.kind === 'web' ? T('Buka game ini di HP (alamat yang sama) → Main Bareng → Gabung sebagai Kontroler', 'Open this game on the phone (same address) → Versus → Join as Controller') : T('Wi-Fi yang sama atau hotspot salah satu HP · tanpa internet', 'Same Wi-Fi or one phone\'s hotspot · no internet')}</p></div>
       <div class="slots">${slot(0)}${slot(1)}${all ? `<p class="go">${T('Semua pemain terhubung!', 'Everyone is connected!')}</p>` : ''}</div></div>
     <div class="foot"><button class="btn" data-a="back">${T('Tutup Ruangan', 'Close Room')}</button><button class="btn pri" data-a="ok" ${all ? '' : 'disabled'}>${T('Lanjut', 'Next')}</button></div>`, 'dim', {
     regen: () => r.regen(), back: () => vsMenu(), ok: () => vsSelect(),

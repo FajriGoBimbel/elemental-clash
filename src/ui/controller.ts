@@ -88,12 +88,15 @@ function updJoin() {
     code: T('Kode ruangan sudah berubah. Minta kode terbaru dari host.', 'The room code has changed. Ask the host for the new code.'),
     lost: T('Gagal tersambung kembali ke host dalam 15 detik.', 'Could not reconnect to the host within 15 seconds.'),
   };
-  const guide = `<ul><li>${T('Pastikan kode sama persis dengan layar host.', 'Check the code matches the host screen exactly.')}</li>
+  const web = getSock()?.kind === 'web';
+  const guide = web ? `<ul><li>${T('Pastikan kode sama persis dengan layar host.', 'Check the code matches the host screen exactly.')}</li>
+    <li>${T('Versi web butuh internet di HP ini dan di host untuk menyambung. Periksa kuota/Wi-Fi.', 'The web version needs internet on this phone and the host to connect. Check data/Wi-Fi.')}</li>
+    <li>${T('Beberapa Wi-Fi kantor/publik memblokir koneksi langsung antar-perangkat; coba data seluler atau hotspot yang punya internet.', 'Some office/public Wi-Fi blocks direct device-to-device links; try mobile data or a hotspot with internet.')}</li></ul>` : `<ul><li>${T('Pastikan kode sama persis dengan layar host.', 'Check the code matches the host screen exactly.')}</li>
     <li>${T('Kedua HP harus tersambung ke Wi-Fi yang sama.', 'Both phones must be on the same Wi-Fi.')}</li>
     <li>${T('Wi-Fi publik atau kantor sering memblokir koneksi antarperangkat. Nyalakan <b>hotspot</b> di salah satu HP dan sambungkan HP lain ke hotspot itu — kuota tidak terpakai.', 'Public or office Wi-Fi often blocks device-to-device traffic. Turn on a <b>hotspot</b> on one phone and connect the other to it — no data is used.')}</li></ul>`;
   $('.jst').innerHTML = busy ? `<p><span class="spin"></span>${T('Mencari host di jaringan lokal…', 'Looking for the host on the local network…')}</p>`
     : st === 'fail' ? `<div class="guide"><b>${link.why === 'notfound' ? T(`Ruangan ${esc(link.code)} tidak ditemukan.`, `Room ${esc(link.code)} was not found.`) : why[link.why] || ''}</b>${link.why === 'notfound' || link.why === 'lost' ? guide : ''}</div>`
-      : `<p class="mut">${T('Tidak perlu internet: cukup Wi-Fi yang sama atau hotspot salah satu HP.', 'No internet needed: just the same Wi-Fi or one phone\'s hotspot.')}</p>`;
+      : `<p class="mut">${web ? T('Versi web: butuh internet untuk menyambung ke host.', 'Web version: internet is needed to reach the host.') : T('Tidak perlu internet: cukup Wi-Fi yang sama atau hotspot salah satu HP.', 'No internet needed: just the same Wi-Fi or one phone\'s hotspot.')}</p>`;
 }
 
 // ---------- tampilan sesuai status sambungan + layar dari host ----------

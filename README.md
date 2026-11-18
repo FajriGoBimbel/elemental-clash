@@ -30,6 +30,12 @@ HP kontroler memilih **Gabung sebagai Kontroler**, memasukkan kode 6 karakter da
 - Halaman kontroler sempat dimuat ulang (mis. reload server dev): sesi tersimpan per tab, kontroler langsung menyambung lagi tanpa kode/izin.
 - Di browser HP, ketukan pertama membuka layar penuh + kunci landscape, dan layar dijaga tetap menyala (NoSleep: Wake Lock di HTTPS, video senyap di `http://`).
 - Koin Main Bareng: +15 per pertandingan untuk profil host, maksimal 10 pertandingan per hari.
+- **Versi web (mis. Vercel):** browser tidak bisa membuka UDP/TCP lokal, jadi dipakai WebRTC DataChannel lewat PeerJS
+  (`src/net/transport.ts` → `PeerBus`). Internet hanya untuk perkenalan awal di server sinyal (default: cloud publik PeerJS),
+  data permainan mengalir langsung antar-perangkat. Server sinyal sendiri: set `VITE_PEER_HOST`, `VITE_PEER_PORT`,
+  `VITE_PEER_PATH`, `VITE_PEER_SECURE` di environment build Vercel. Main tanpa internet sama sekali tetap lewat APK Android.
+- Uji transport web lokal: jalankan PeerServer (`npx peer --port 9000`), `VITE_PEER_HOST=localhost VITE_PEER_PORT=9000 VITE_PEER_SECURE=false npm run dev`,
+  lalu `LAN=web npm run test:mp`.
 
 Jaringan lokal butuh aplikasi Android (plugin native `LanPlugin`/`LanCore` di `android/`). Untuk uji tanpa APK:
 `npm run dev`, lalu buka alamat Network di beberapa HP/tab — paket diteruskan lewat server dev (hanya mode dev).

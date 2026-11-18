@@ -49,6 +49,11 @@ export class HostRoom {
   async open() {
     this.off = this.sock.on(e => this.ev(e));
     await this.sock.udpBind(UDP_PORT); await this.sock.tcpListen(TCP_PORT);
+    if (this.sock.serve) { // web: kode harus unik di server sinyal; bila sudah dipakai orang lain, buat kode baru
+      for (let i = 0; ; i++) {
+        try { await this.sock.serve(this.code); break; } catch (e: any) { if (e?.type !== 'unavailable-id' || i >= 4) { this.off?.(); throw e; } this.code = newCode(); }
+      }
+    }
     this.timer = setInterval(() => this.tick(), 200) as unknown as number;
   }
   close() {
@@ -56,7 +61,11 @@ export class HostRoom {
     for (const r of this.reqs) this.sock.tcpSend(r.conn, JSON.stringify({ t: 'deny', why: 'closed' }));
     setTimeout(() => this.sock.closeAll(), 150); this.off?.(); clearInterval(this.timer);
   }
-  regen() { this.code = newCode(); this.onChange(); }
+  regen() {
+    const c = newCode();
+    if (!this.sock.serve) { this.code = c; this.onChange(); return; }
+    this.sock.serve(c).then(() => { this.code = c; this.onChange(); }, (e: any) => { if (e?.type === 'unavailable-id') this.regen(); }); // web: pakai kode baru setelah terdaftar
+  }
   remote(slot: number) { return this.slots.includes(slot); }
   ready(slot: number) { return !!this.peers[slot]?.up; }
 
@@ -130,9 +139,9 @@ export class ClientLink {
   constructor(private sock: Sock, private name: string) { }
 
   async start() { this.off = this.sock.on(e => this.ev(e)); this.uport = await this.sock.udpBind(0); this.timer = setInterval(() => this.tick(), 200) as unknown as number; }
-  join(code: string) { this.code = code; this.tok = ''; this.search(SEARCH_MS); }
+  join(code: string) { this.code = code; this.tok = ''; this.sock.target?.(code); this.search(SEARCH_MS); }
   /** Menyambung lagi dengan token lama (mis. setelah halaman dimuat ulang). */
-  resume(code: string, tok: string) { this.code = code; this.tok = tok; this.search(RECONNECT_MS); }
+  resume(code: string, tok: string) { this.code = code; this.tok = tok; this.sock.target?.(code); this.search(RECONNECT_MS); }
   private set(s: CState, why: ClientLink['why'] = '') { this.state = s; this.why = why; this.onState(); }
   private search(ms: number) {
     const id = ++this.attempt, t0 = now(); this.connecting = false;

@@ -1,7 +1,7 @@
 // Uji end-to-end Main Bareng (konfigurasi C): 1 host + 2 kontroler di 3 tab Chrome headless,
 // tersambung lewat relay server dev. Pakai: npm run dev, lalu URL=http://localhost:5173 node scripts/mp-e2e.mjs <folder>
 import puppeteer from 'puppeteer-core';
-const out = process.argv[2] || '.', base = (process.env.URL || 'http://localhost:5173') + '/?skip';
+const out = process.argv[2] || '.', base = (process.env.URL || 'http://localhost:5173') + '/?skip' + (process.env.LAN ? '&lan=' + process.env.LAN : ''); // LAN=web: uji transport WebRTC
 const browser = await puppeteer.launch({ executablePath: '/usr/bin/google-chrome', headless: 'new', args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--mute-audio', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] });
 let host;
 const errs = [], log = (...a) => console.log(...a);
@@ -49,6 +49,7 @@ const x1 = await host.evaluate('__ec.fight.m.f[0].x');
 void ( await host.evaluate('JSON.stringify({seq: __ec.vs.room.input.map(i => i.lastSeq), up: __ec.vs.room.peers.map(p => p && p.up), paused: __ec.fight.paused, phase: __ec.fight.m.phase, st: __ec.fight.m.f[0].state})')); check(x1 > x0 + .5, `joystick kontroler 1 menggerakkan P1: x ${x0.toFixed(2)} → ${x1.toFixed(2)}`);
 const n0 = await host.evaluate('__ec.fight.m.f[1].seq'); await c2.keyboard.press('KeyJ'); await wait(300);
 check(await host.evaluate('__ec.fight.m.f[1].seq') > n0, 'tombol serang kontroler 2 memicu serangan P2');
+if (process.env.DBG) log('DBG', await host.evaluate('JSON.stringify({peers: __ec.vs.room.peers.map(p => p && {up: p.up, age: Math.round(performance.now() - p.last), host: p.host}), st: __ec.fight.m.f[1].state, paused: __ec.fight.paused})'), await c2.evaluate('JSON.stringify({ui: document.querySelector("#ui").innerHTML.slice(0, 150)})'));
 const hp = await c1.$eval('.php i', e => e.style.width); check(!!hp, 'kontroler menerima HP dari host: ' + hp);
 // HP kontroler memuat ulang halaman (mis. reload server dev / tab dibuang): harus menyambung lagi sendiri
 await c1.bringToFront(); await c1.reload({ waitUntil: 'load' }); await until(c1, '!!document.querySelector(".cpad") && !!document.querySelector(".ctl .cb.atk")', 90000)
