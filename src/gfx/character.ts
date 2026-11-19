@@ -49,12 +49,31 @@ function seq(u: number, fr: [number, Pose][], out: Pose) {
 
 const S0 = P();
 const atk = (wind: PoseSpec, hit: PoseSpec, tw = .75): [number, Pose][] => [[0, S0], [tw, P(wind)], [1.08, P(hit)], [2.05, P(hit)], [3, S0]];
+const SBK = P({ lean: 78, hd: -42, hdT: -60, aL: [64, 8, 138], aR: [56, 8, 140], lL: [6, 26, 0], lR: [-138, 0, 0], y: -.04 });
 const ATK: Record<string, [number, Pose][]> = {
-  jab: atk({ aR: [18, 20, 128], twist: -34 }, { aR: [90, 4, 4], twist: 16, lean: 13, lL: [32, 30, 5], lR: [-30, 16, 6] }),
-  cross: atk({ aL: [22, 16, 128], twist: 6 }, { aL: [92, 2, 4], aR: [28, 22, 124], twist: -56, lean: 15, lL: [34, 34, 5], lR: [-30, 12, 6] }),
-  kick: atk({ lR: [58, 105, 8], lean: -6, twist: -5 }, { lR: [102, 4, 8], lL: [-4, 8, 0], lean: -24, twist: 28, aL: [62, 32, 80], aR: [-34, 34, 40] }, .8),
+  jab: atk({ aR: [18, 20, 128], twist: -34, lean: 4 }, { aR: [90, 4, 4], twist: 16, lean: 15, y: -.03, hd: 6, lL: [32, 30, 5], lR: [-30, 16, 6] }),
+  cross: atk({ aL: [22, 16, 128], twist: 10, lean: 2, y: -.02 }, { aL: [92, 2, 4], aR: [28, 22, 124], twist: -60, lean: 18, y: -.05, hd: 6, lL: [34, 34, 5], lR: [-30, 12, 6] }),
+  hook: atk({ aR: [-6, 84, 100], twist: -48, lean: 6, y: -.04, roll: 6 }, { aR: [4, 94, 62], twist: 64, lean: 18, y: -.06, roll: -8, hdT: -10, lL: [36, 34, 5], lR: [-34, 14, 6] }),
+  teep: atk({ lR: [100, 128, 4], lL: [6, 18, 0], lean: 6, twist: -10, y: -.03, aL: [72, 14, 112], aR: [56, 14, 122] }, { lR: [98, 0, 4], lL: [-8, 12, 0], lean: -20, twist: 14, y: .04, aL: [74, 14, 110], aR: [58, 14, 120], hd: 10 }, .8),
+  roundhouse: atk({ lL: [30, 110, 50], lR: [-10, 14, 0], twist: 24, lean: 6, y: -.03, aL: [50, 30, 90], aR: [30, 40, 90] }, { lL: [8, 8, 88], lR: [-4, 10, 0], twist: -64, lean: -14, roll: 24, y: .03, aL: [-10, 50, 30], aR: [20, 60, 40] }, .8),
+  // uppercut: badan merendah dengan tinju di pinggang, lalu tinju naik vertikal ke dagu
+  uppercut: atk({ aR: [8, 14, 128], aL: [70, 14, 112], lean: 22, twist: -26, y: -.1, lL: [44, 78, 6], lR: [-6, 66, 6] }, { aR: [128, 8, 96], aL: [62, 18, 112], lean: -10, twist: 30, hd: -12, y: .04, lL: [26, 24, 5], lR: [-26, 12, 6] }),
+  // superman punch: kaki belakang ditarik, lalu lompat kecil sambil memukul lurus dengan badan condong maju
+  superman: atk({ lR: [-36, 70, 6], lL: [30, 40, 5], lean: 14, twist: -24, aR: [24, 20, 124] }, { y: .28, lean: 24, twist: 18, aR: [94, 4, 4], aL: [30, 30, 96], lL: [40, 50, 5], lR: [-56, 24, 6] }),
+  // elbow: lengan kanan ditekuk penuh, siku menyapu mendatar setinggi kepala dengan putaran pinggul penuh
+  elbow: atk({ aR: [4, 92, 152], twist: -44, lean: 8, y: -.04, roll: 6 }, { aR: [6, 100, 156], twist: 68, lean: 16, y: -.06, roll: -10, hdT: -8, lL: [32, 30, 5], lR: [-30, 16, 6] }),
+  // spinning back kick (mengikuti tutorial 3 tahap): 1) kepala & bahu menoleh lebih dulu sambil pivot di kaki depan,
+  // 2) lutut ditarik tinggi ke dada dengan badan masih tegak, 3) badan menekuk jauh dan kaki dihentak lurus tinggi ke belakang.
+  // Tangan tetap rapat menjaga muka; putaran badan diatur terpisah di poseFor (SPIN_TW)
+  spinkick: [[0, P()],
+    [.5, P({ lean: 6, y: -.03, hdT: -60, aL: [70, 8, 140], aR: [62, 8, 142], lL: [26, 36, 4], lR: [-14, 36, 4] })],
+    [.9, P({ lean: 14, y: -.02, hd: -6, hdT: -65, aL: [68, 8, 140], aR: [60, 8, 142], lL: [12, 26, 2], lR: [104, 136, 0] })],
+    [1.08, SBK], [2.05, SBK],
+    [2.5, P({ lean: 34, y: -.03, hd: -18, hdT: -40, aL: [66, 8, 138], aR: [58, 8, 140], lL: [14, 30, 4], lR: [40, 118, 0] })],
+    [3, P()]],
+  kick: atk({ lR: [-30, 50, 8], lL: [14, 22, 0], lean: 14, twist: -14, aL: [70, 30, 90], aR: [20, 30, 90] }, { lR: [134, 0, 10], lL: [-6, 6, 0], lean: -34, twist: 22, hd: 14, y: .04, aL: [-30, 42, 20], aR: [-42, 38, 20] }, .8),
   airkick: [[0, P({ lL: [50, 90, 5], lR: [30, 80, 5] })], [.9, P({ lR: [80, 6, 5], lL: [-28, 98, 5], lean: -12, aL: [70, 28, 70], aR: [-24, 38, 50], twist: 10 })], [3, P({ lR: [80, 6, 5], lL: [-28, 98, 5], lean: -12, aL: [70, 28, 70], aR: [-24, 38, 50], twist: 10 })]],
-  sweep: atk({ lL: [78, 128, 10], lR: [50, 118, 10], lean: 20 }, { lL: [76, 132, 10], lR: [84, 6, 2], lean: 4, twist: 30, aL: [20, 40, 40], aR: [-20, 50, 30] }),
+  sweep: atk({ lL: [78, 128, 10], lR: [50, 118, 10], lean: 22, twist: -16 }, { lL: [76, 132, 10], lR: [84, 6, 2], lean: 10, twist: 44, roll: -10, aL: [20, 40, 40], aR: [-20, 50, 30] }),
   cast: atk({ aR: [-38, 26, 72], aL: [62, 10, 60], twist: -38 }, { aR: [90, 0, 4], aL: [82, -4, 12], twist: 18, lean: 15, lL: [34, 34, 5], lR: [-30, 14, 6] }),
   cast2: atk({ aR: [-55, 22, 30], aL: [-55, 22, 30], lean: 24, lL: [50, 80, 8], lR: [10, 70, 8] }, { aR: [128, 22, 8], aL: [128, 22, 8], lean: -6, sp: -10, hd: -10, lL: [30, 28, 8], lR: [-26, 12, 8], twist: 0 }),
   raise: atk({ aL: [62, -22, 124], aR: [62, -22, 124], lean: 14, lL: [36, 60, 6], lR: [0, 56, 6], twist: 0 }, { aL: [168, 36, 10], aR: [168, 36, 10], sp: -14, hd: -18, y: .28, lean: -4, twist: 0, lL: [14, 26, 6], lR: [-6, 40, 6] }),
@@ -81,6 +100,13 @@ const POSES = {
   show: P({ twist: 0, hdT: 0, lean: 2, aL: [10, 12, 22], aR: [14, 16, 60], lL: [6, 8, 7], lR: [-5, 8, 7] }),
 };
 
+/** Putaran badan spinning back kick (u → derajat): -20 = kuda-kuda, 180 = membelakangi lawan, 340 = kembali menghadap. */
+const SPIN_TW: [number, number][] = [[0, -20], [.3, -10], [1.08, 192], [2.05, 214], [3, 340]];
+function lerpPts(u: number, pts: [number, number][]) {
+  if (u <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) if (u <= pts[i][0]) { const [u0, v0] = pts[i - 1], [u1, v1] = pts[i]; return v0 + (v1 - v0) * (u - u0) / (u1 - u0); }
+  return pts[pts.length - 1][1];
+}
 export interface AnimCtx { state: string; anim?: string; u: number; st: number; t: number; vy: number; walkPh: number; back: boolean; landed: boolean; alt: boolean }
 /** Menghitung pose target untuk state petarung. */
 export function poseFor(c: AnimCtx, out: Pose) {
@@ -89,6 +115,7 @@ export function poseFor(c: AnimCtx, out: Pose) {
     case 'attack': {
       const fr = ATK[c.anim!] || ATK.jab; seq(c.u, fr, out);
       if (c.anim === 'spin' && c.u > .75 && c.u < 2.3) out[2] = -(c.u - .75) / 1.55 * 720;
+      if (c.anim === 'spinkick') out[2] = lerpPts(c.u, SPIN_TW);
       return;
     }
     case 'walk': {
@@ -260,7 +287,8 @@ export class CharModel {
   /** Menghaluskan pose saat ini menuju target lalu menerapkannya ke rangka. */
   apply(target: Pose, dt: number, rate: number, time: number) {
     const k = dt <= 0 ? 1 : 1 - Math.exp(-rate * dt), p = this.pose;
-    for (let i = 0; i < 21; i++) p[i] += (target[i] - p[i]) * k;
+    // twist (indeks 2) lewat jalur terpendek, agar putaran penuh (spin, spinkick) tidak "terurai" balik
+    for (let i = 0; i < 21; i++) { const d = target[i] - p[i]; p[i] += (i === 2 ? ((d % 360) + 540) % 360 - 180 : d) * k; }
     const drop = (h: number, kn: number, s: number) => TH * Math.cos(h * D) * Math.cos(s * D) + SH * Math.cos((h - kn) * D);
     const lie = Math.min(1, Math.abs(p[4]) / 90);
     const py = Math.max(drop(p[15], p[16], p[17]), drop(p[18], p[19], p[20]), .25) + FOOT;

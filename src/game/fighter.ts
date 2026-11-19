@@ -1,8 +1,8 @@
 import type { CharDef, Move, Elem } from '../data';
 import type { Match } from './match';
 
-export interface Input { mx: number; up: boolean; down: boolean; atk: boolean; s1: boolean; s2: boolean; block: boolean; dash: boolean; ult: boolean }
-export const noInput = (): Input => ({ mx: 0, up: false, down: false, atk: false, s1: false, s2: false, block: false, dash: false, ult: false });
+export interface Input { mx: number; up: boolean; down: boolean; atk: boolean; hvy: boolean; s1: boolean; s2: boolean; block: boolean; dash: boolean; ult: boolean }
+export const noInput = (): Input => ({ mx: 0, up: false, down: false, atk: false, hvy: false, s1: false, s2: false, block: false, dash: false, ult: false });
 export type State = 'idle' | 'walk' | 'crouch' | 'jump' | 'attack' | 'block' | 'dash' | 'hit' | 'down' | 'getup' | 'ko' | 'win' | 'fall';
 
 const G = 32;
@@ -16,7 +16,7 @@ export class Fighter {
   cd1 = 0; cd2 = 0; burn = 0; burnTick = 0; slow = 0; root = 0; inv = 0; lock = 0; stunT = 0;
   landed = false; airUsed = false; dashDir = 1; comboN = 0; hitSeq = 0;
   elem: Elem;
-  private buf = { atk: 0, s1: 0, s2: 0, dash: 0, ult: 0 };
+  private buf = { atk: 0, hvy: 0, s1: 0, s2: 0, dash: 0, ult: 0 };
 
   constructor(public def: CharDef, public idx: number) { this.elem = def.elem; this.hp = def.hp; }
 
@@ -24,7 +24,7 @@ export class Fighter {
     this.x = x; this.y = 0; this.vx = this.vy = this.push = 0; this.face = face; this.hp = this.def.hp;
     this.stam = MAX_STAM; this.stamWait = 0; this.state = 'idle'; this.st = 0; this.move = null;
     this.cd1 = this.cd2 = this.burn = this.slow = this.root = this.inv = this.lock = 0; this.comboN = 0;
-    this.buf = { atk: 0, s1: 0, s2: 0, dash: 0, ult: 0 };
+    this.buf = { atk: 0, hvy: 0, s1: 0, s2: 0, dash: 0, ult: 0 };
   }
   get grounded() { return this.y <= 0.001; }
   get actionable() { return this.state === 'idle' || this.state === 'walk' || this.state === 'crouch' || (this.state === 'block' && this.lock <= 0); }
@@ -53,6 +53,7 @@ export class Fighter {
     if (b.ult > 0 && this.energy >= 100) { b.ult = 0; this.energy = 0; this.startMove(mv.ult, m); m.freeze = 1.0; m.ev({ t: 'ult', f: this }); return true; }
     if (b.s2 > 0 && this.cd2 <= 0) { b.s2 = 0; this.cd2 = mv.s2.cd!; this.startMove(mv.s2, m); return true; }
     if (b.s1 > 0 && this.cd1 <= 0) { b.s1 = 0; this.cd1 = mv.s1.cd!; this.startMove(mv.s1, m); return true; }
+    if (b.hvy > 0) { b.hvy = 0; this.startMove(inp.down ? mv.hvLow : mv.hv, m); return true; }
     if (b.atk > 0) { b.atk = 0; this.startMove(inp.down ? mv.low : mv.a1, m); return true; }
     if (b.dash > 0 && this.stam >= 1 && this.root <= 0) {
       b.dash = 0; this.stam -= 1; this.stamWait = .8; this.state = 'dash'; this.st = 0;
@@ -73,7 +74,7 @@ export class Fighter {
     }
     if (d.regen && this.alive && this.hp > 0) this.hp = Math.min(d.hp, this.hp + d.hp * d.regen * dt);
     if (this.stamWait > 0) this.stamWait -= dt; else this.stam = Math.min(MAX_STAM, this.stam + dt);
-    for (const k of ['atk', 's1', 's2', 'dash', 'ult'] as const) b[k] = inp[k] ? .16 : b[k] - dt;
+    for (const k of ['atk', 'hvy', 's1', 's2', 'dash', 'ult'] as const) b[k] = inp[k] ? .16 : b[k] - dt;
     this.st += dt;
     const spd = d.spd * (this.slow > 0 ? .55 : 1);
 
@@ -94,7 +95,9 @@ export class Fighter {
         break;
       }
       case 'jump':
-        if (b.atk > 0 && !this.airUsed) { b.atk = 0; this.airUsed = true; this.face = opp.x >= this.x ? 1 : -1; this.startMove(d.moves.air, m); }
+        if ((b.atk > 0 || b.hvy > 0) && !this.airUsed) {
+          const k = b.hvy > 0 ? 'hvAir' : 'air'; b.atk = b.hvy = 0; this.airUsed = true; this.face = opp.x >= this.x ? 1 : -1; this.startMove(d.moves[k], m);
+        }
         break;
       case 'attack': {
         const mv = this.move!; this.mt += dt;
@@ -102,8 +105,11 @@ export class Fighter {
         if (mv.lunge && this.mt >= this.su * .5 && this.mt < this.su + this.ac) this.vx = this.face * mv.lunge * (this.root > 0 ? 0 : 1);
         else if (this.grounded) this.vx = 0;
         if (!this.spawned && this.mt >= this.su) { this.spawned = true; if (mv.spawn) m.spawn(mv.spawn, this, opp); }
-        if (mv.next && b.atk > 0 && this.mt >= this.su + this.ac + (this.hitDone ? 0 : this.re * .5)) {
-          b.atk = 0; this.face = opp.x >= this.x ? 1 : -1; this.startMove(d.moves[mv.next], m); break;
+        // kombo: tombol yang ditekan memilih cabang berikutnya (lihat daftar kombo di data.ts).
+        // Gerakan Heavy selalu menunggu separuh recovery agar ritmenya terasa lebih lambat dari Light.
+        const br = mv.branch, nx = br && (b.hvy > 0 && br.hvy ? br.hvy : b.atk > 0 && br.atk ? br.atk : null);
+        if (nx && this.mt >= this.su + this.ac + (this.hitDone && !mv.heavy ? 0 : this.re * .5)) {
+          b.atk = b.hvy = 0; this.face = opp.x >= this.x ? 1 : -1; this.startMove(d.moves[nx], m); break;
         }
         if (this.mt >= total) { this.move = null; this.state = this.grounded ? 'idle' : 'jump'; this.st = 0; }
         break;

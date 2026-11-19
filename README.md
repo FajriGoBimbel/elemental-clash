@@ -15,13 +15,13 @@ npm run preview    # menjalankan hasil build
 npm run sim -- 20  # simulasi bot lawan bot untuk memeriksa keseimbangan
 ```
 
-Kontrol desktop: `A/D` gerak · `W` lompat · `S` menunduk · `J` serang · `K/L` jurus · `I`/`Spasi` tangkis · `O`/`Shift` dash · `U` pamungkas · `Esc` jeda.
+Kontrol desktop: `A/D` gerak · `W` lompat · `S` menunduk · `J` serangan ringan · `H` serangan berat · `K/L` jurus · `I`/`Spasi` tangkis · `O`/`Shift` dash · `U` pamungkas · `Esc` jeda.
 Tambahkan `?demo` di URL agar karakter pemain dimainkan bot (mode tontonan), `?skip` untuk melewati layar ketuk.
 
 ## Main Bareng (multiplayer lokal, CR-001)
 
-Menu **Main Bareng** punya tiga konfigurasi: **A** satu layar (dua set kontrol sentuh kiri/kanan; keyboard P1 `WASD J K L I O U`,
-P2 panah + `, . / ' ; Shift kanan` atau numpad), **B** layar + 1 HP kontroler, **C** layar + 2 HP kontroler.
+Menu **Main Bareng** punya tiga konfigurasi: **A** satu layar (dua set kontrol sentuh kiri/kanan; keyboard P1 `WASD J H K L I O U`,
+P2 panah + `, M . / ' ; Shift kanan` atau numpad), **B** layar + 1 HP kontroler, **C** layar + 2 HP kontroler.
 HP kontroler memilih **Gabung sebagai Kontroler**, memasukkan kode 6 karakter dari lobi, lalu menunggu izin host.
 
 - Host satu-satunya penentu hasil; kontroler hanya mengirim input (UDP 60×/dtk, 3 frame terakhir ikut dikirim).

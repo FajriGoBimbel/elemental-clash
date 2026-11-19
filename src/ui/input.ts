@@ -4,9 +4,9 @@ import type { Elem } from '../data';
 import { save, T } from '../save';
 import { icon, SVG, elVar } from './dom';
 
-const P1: Record<string, string> = { KeyA: 'l', KeyD: 'r', KeyW: 'u', KeyS: 'd', KeyJ: 'atk', KeyK: 's1', KeyL: 's2', KeyI: 'block', Space: 'block', KeyO: 'dash', ShiftLeft: 'dash', KeyU: 'ult' };
+const P1: Record<string, string> = { KeyA: 'l', KeyD: 'r', KeyW: 'u', KeyS: 'd', KeyJ: 'atk', KeyH: 'hvy', KeyK: 's1', KeyL: 's2', KeyI: 'block', Space: 'block', KeyO: 'dash', ShiftLeft: 'dash', KeyU: 'ult' };
 const P2: Record<string, string> = {
-  ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd', Numpad1: 'atk', Comma: 'atk', Numpad2: 's1', Period: 's1', Numpad3: 's2', Slash: 's2',
+  ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd', Numpad1: 'atk', Comma: 'atk', Numpad4: 'hvy', KeyM: 'hvy', Numpad2: 's1', Period: 's1', Numpad3: 's2', Slash: 's2',
   Numpad0: 'block', Quote: 'block', NumpadDecimal: 'dash', ShiftRight: 'dash', Numpad5: 'ult', Semicolon: 'ult',
 };
 /** Peta tombol keyboard: satu pemain memakai semuanya; dua pemain di satu layar dibagi kiri/kanan. */
@@ -14,7 +14,7 @@ export const KEYMAP = { solo: { ...P2, ...P1 }, p1: P1, p2: P2 };
 /** Status ringkas untuk tombol: cooldown (0–1), energi (0–100), stamina. */
 export interface PadStat { c1: number; c2: number; en: number; st: number }
 export const padStat = (f: Fighter): PadStat => ({ c1: f.cd1 / f.def.moves.s1.cd!, c2: f.cd2 / f.def.moves.s2.cd!, en: f.energy, st: f.stam });
-type Edge = 'atk' | 's1' | 's2' | 'dash' | 'ult';
+type Edge = 'atk' | 'hvy' | 's1' | 's2' | 'dash' | 'ult';
 
 export class Controls {
   el: HTMLElement; private held: Record<string, boolean> = {}; private edge: Record<string, boolean> = {};
@@ -32,7 +32,8 @@ export class Controls {
         <button class="cb s1" data-k="s1" aria-label="${T('Jurus 1', 'Skill 1')}">${icon(elem)}<small>1</small><i class="cd"></i></button>
         <button class="cb s2" data-k="s2" aria-label="${T('Jurus 2', 'Skill 2')}">${icon(elem)}<small>2</small><i class="cd"></i></button>
         <div class="enr"></div><button class="cb ult" data-k="ult" aria-label="${T('Pamungkas', 'Ultimate')}">${SVG.ult}</button>
-        <button class="cb atk" data-k="atk" aria-label="${T('Serang', 'Attack')}">${SVG.atk}</button>
+        <button class="cb hvy" data-k="hvy" aria-label="${T('Serangan Berat', 'Heavy Attack')}">${SVG.atk}<small>${T('BERAT', 'HEAVY')}</small></button>
+        <button class="cb atk" data-k="atk" aria-label="${T('Serangan Ringan', 'Light Attack')}">${SVG.atk}</button>
       </div>`;
     parent.appendChild(el); this.applySettings();
     el.querySelectorAll<HTMLElement>('.cb').forEach(b => {
@@ -61,7 +62,7 @@ export class Controls {
   private kd = (e: KeyboardEvent) => {
     if (e.code === 'Escape' || e.code === 'KeyP') { this.onPause(); return; }
     const k = this.keys[e.code]; if (!k) return; e.preventDefault();
-    if (!e.repeat && (k === 'atk' || k === 's1' || k === 's2' || k === 'dash' || k === 'ult')) this.edge[k] = true;
+    if (!e.repeat && (k === 'atk' || k === 'hvy' || k === 's1' || k === 's2' || k === 'dash' || k === 'ult')) this.edge[k] = true;
     this.held[k] = true;
   };
   private ku = (e: KeyboardEvent) => { const k = this.keys[e.code]; if (k) this.held[k] = false; };
@@ -77,7 +78,7 @@ export class Controls {
     const h = this.held;
     i.mx = (h.r ? 1 : 0) - (h.l ? 1 : 0) || (Math.abs(this.sx) > .28 ? Math.sign(this.sx) * Math.min(1, Math.abs(this.sx) * 1.5) : 0);
     i.up = !!h.u || this.sy < -.6; i.down = !!h.d || this.sy > .6; i.block = !!h.block;
-    for (const k of ['atk', 's1', 's2', 'dash', 'ult'] as Edge[]) { i[k] = !!this.edge[k]; this.edge[k] = false; }
+    for (const k of ['atk', 'hvy', 's1', 's2', 'dash', 'ult'] as Edge[]) { i[k] = !!this.edge[k]; this.edge[k] = false; }
     return i;
   }
   /** Memperbarui cooldown jurus dan tombol pamungkas. */

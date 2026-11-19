@@ -289,10 +289,17 @@ function onFightEvent(e: Ev) {
   }
 }
 
+const COMBOS: [string, [string, string]][] = [
+  ['L-L-L', ['Jab, Cross, Hook', 'Jab, Cross, Hook']], ['L-L-H', ['Jab, Cross, Uppercut', 'Jab, Cross, Uppercut']],
+  ['L-H-H', ['Jab, Roundhouse, Tendangan Putar', 'Jab, Roundhouse, Spinning Back Kick']], ['H-H-H', ['Teep, Roundhouse, Tendangan', 'Teep, Roundhouse, Kick']],
+  ['H-L-L', ['Teep, Superman Punch, Hook', 'Teep, Superman Punch, Hook']], ['H-H-L', ['Teep, Roundhouse, Sikutan', 'Teep, Roundhouse, Elbow']],
+];
 function movesHtml(c: CharDef) {
   return `<div class="moves" style="${elVar(c.elem)}">
-    <div class="mv"><b>${T('Serang', 'Attack')}</b><span>${T('Tekan beruntun untuk kombo 3 pukulan. Di udara: tendangan lompat. Sambil menunduk: sapuan.', 'Tap repeatedly for a 3-hit combo. In the air: jump kick. While crouching: sweep.')}</span></div>
+    <div class="mv"><b>${T('Serangan Ringan', 'Light Attack')}</b><span>${T('Tekan beruntun untuk kombo jab, cross, hook. Di udara: tendangan lompat. Sambil menunduk: sapuan.', 'Tap repeatedly for a jab, cross, hook combo. In the air: jump kick. While crouching: sweep.')}</span></div>
+    <div class="mv"><b>${T('Serangan Berat', 'Heavy Attack')}</b><span><strong>${tr(c.moves.hv.name!)}</strong> — ${T('Tekan beruntun untuk kombo teep, roundhouse, kick: ritmenya lebih lambat dari serangan ringan tapi kuat, tendangan terakhir menjatuhkan lawan. Di udara: tendangan menukik. Sambil menunduk: pukulan ke atas, ampuh melawan lompatan.', 'Tap repeatedly for a teep, roundhouse, kick combo: slower rhythm than light attacks but strong, the last kick knocks the foe down. In the air: diving kick. While crouching: rising strike, great against jump-ins.')}</span></div>
     ${(['s1', 's2', 'ult'] as const).map((k, i) => `<div class="mv"><b>${[T('Jurus 1', 'Skill 1'), T('Jurus 2', 'Skill 2'), T('Pamungkas', 'Ultimate')][i]}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc || ['', ''])}${c.moves[k].cd ? ` <span class="mut">(${c.moves[k].cd} ${T('dtk', 's')})</span>` : ''}</span></div>`).join('')}
+    <div class="mv"><b>${T('Kombo', 'Combos')}</b><span>${COMBOS.map(([k, n]) => `<strong>${k}</strong> ${tr(n)}`).join(' · ')} <span class="mut">(L = ${T('ringan', 'light')}, H = ${T('berat', 'heavy')})</span></span></div>
     <div class="mv"><b>${T('Tangkis', 'Block')}</b><span>${T('Menahan 85% damage. Tiap serangan yang ditahan memakai stamina; stamina habis = tangkisan jebol.', 'Blocks 85% of damage. Each blocked hit costs stamina; at zero your guard breaks.')}</span></div>
     <div class="mv"><b>Dash</b><span>${T('Melesat cepat dan kebal sesaat. Memakai 1 stamina; pulih penuh dalam 3 detik.', 'A quick burst with brief invulnerability. Costs 1 stamina; fully recovers in 3 seconds.')}</span></div></div>`;
 }
