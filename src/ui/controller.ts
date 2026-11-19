@@ -4,7 +4,7 @@ import { ELEMS, arenaById, charById, hex } from '../data';
 import { ClientLink, CODE_ABC, RECONNECT_MS } from '../net/room';
 import { getSock } from '../net/transport';
 import { Controls, KEYMAP } from './input';
-import type { Input } from '../game/fighter';
+import { noInput, type Input } from '../game/fighter';
 import { $, bind, elVar, esc, etag, icon, modal, show, sigIcon, ui } from './dom';
 import { T, persist, save, tr } from '../save';
 import { sound } from '../audio';
@@ -224,7 +224,7 @@ function padOn(id: string) {
     <p class="watch">${T('Lihat layar host', 'Watch the host screen')}</p></div>`;
   bind(ui.firstElementChild as HTMLElement, { pause: () => link!.cmd('pause') });
   pad = new Controls(ui, c.elem, { keys: KEYMAP.solo }); pad.onPause = () => link!.cmd('pause');
-  link!.setReader(() => pad ? pad.read() : { mx: 0, up: false, down: false, atk: false, s1: false, s2: false, block: false, dash: false, ult: false });
+  link!.setReader(() => pad ? pad.read() : noInput());
 }
 function fb(m: any) {
   if (!pad) return;

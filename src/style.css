@@ -230,10 +230,12 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .cb.on { transform: scale(.9); background: rgba(255, 255, 255, .35); }
 .cb.atk { right: .2rem; bottom: .2rem; width: 5.6rem; height: 5.6rem; border-color: #fff; background: rgba(255, 255, 255, .16); }
 .cb.blk { right: 6.5rem; bottom: .1rem; width: 4.1rem; height: 4.1rem; }
-.cb.s1 { right: 5.6rem; bottom: 4.8rem; width: 4.1rem; height: 4.1rem; border-color: var(--el); color: var(--el); }
+.cb.hvy { right: 5.6rem; bottom: 4.8rem; width: 4.1rem; height: 4.1rem; border-color: #fff; background: rgba(255, 255, 255, .1); }
+.cb.hvy svg { stroke-width: 3.6; }
+.cb.s1 { right: 10.1rem; bottom: 4.6rem; width: 4.1rem; height: 4.1rem; border-color: var(--el); color: var(--el); }
 .cb.s2 { right: .9rem; bottom: 6.5rem; width: 4.1rem; height: 4.1rem; border-color: var(--el); color: var(--el); }
 .cb.dsh { right: 11.3rem; bottom: .1rem; width: 3.7rem; height: 3.7rem; }
-.cb.ult { right: 10.4rem; bottom: 5rem; width: 4.8rem; height: 4.8rem; border-color: var(--gold); color: #0a0c18; background: radial-gradient(circle, #fff, var(--gold)); box-shadow: 0 0 1.4rem var(--gold); display: none; animation: pulse .7s infinite; }
+.cb.ult { right: 5.2rem; bottom: 9.2rem; width: 4.8rem; height: 4.8rem; border-color: var(--gold); color: #0a0c18; background: radial-gradient(circle, #fff, var(--gold)); box-shadow: 0 0 1.4rem var(--gold); display: none; animation: pulse .7s infinite; }
 .cb.ult.ready { display: grid; }
 .cb .cd { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(rgba(0, 0, 0, .72) calc(var(--p, 0) * 360deg), transparent 0); pointer-events: none; }
 .ctl.swap .btns { right: auto; left: calc(1.1rem + var(--cm)); transform: scale(var(--cs)) scaleX(-1); transform-origin: bottom left; }
@@ -248,7 +250,7 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .ctl.half .stick-zone { width: 44%; }
 .ctl.half .stick-base { left: calc(1rem + var(--cm)); width: calc(6.2rem * var(--cs)); height: calc(6.2rem * var(--cs)); }
 .ctl.half .btns { right: calc(.5rem + var(--cm)); transform: scale(calc(var(--cs) * .74)); }
-.enr { position: absolute; right: 10.4rem; bottom: 5rem; width: 4.8rem; height: 4.8rem; border-radius: 50%; pointer-events: none;
+.enr { position: absolute; right: 5.2rem; bottom: 9.2rem; width: 4.8rem; height: 4.8rem; border-radius: 50%; pointer-events: none;
   background: conic-gradient(var(--gold) calc(var(--en, 0) * 360deg), rgba(255, 255, 255, .1) 0); -webkit-mask: radial-gradient(circle, transparent 58%, #000 60%); mask: radial-gradient(circle, transparent 58%, #000 60%); opacity: .8; }
 .ctl.ultok .enr { display: none; }
 .sig { display: inline-flex; align-items: flex-end; gap: .12rem; height: .9em; vertical-align: -.05em; }

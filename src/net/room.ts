@@ -14,8 +14,8 @@ const newTok = () => [...crypto.getRandomValues(new Uint8Array(8))].map(x => x.t
 const now = () => performance.now();
 const parse = (s: string) => { try { return JSON.parse(s); } catch { return null; } };
 
-const BITS = ['up', 'down', 'block', 'atk', 's1', 's2', 'dash', 'ult'] as const;
-const EDGE = ['atk', 's1', 's2', 'dash', 'ult'] as const;
+const BITS = ['up', 'down', 'block', 'atk', 's1', 's2', 'dash', 'ult', 'hvy'] as const;
+const EDGE = ['atk', 'hvy', 's1', 's2', 'dash', 'ult'] as const;
 export type Frame = [number, number];
 export function pack(i: Input): Frame { let b = 0; BITS.forEach((k, n) => { if (i[k]) b |= 1 << n; }); return [Math.round(i.mx * 100), b]; }
 

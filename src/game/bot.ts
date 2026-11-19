@@ -11,13 +11,18 @@ export class Bot {
   private plan = 'wait'; private planT = 0; private presses = 0; private blockT = 0; private counter = false;
   private seenSeq = -1; private punSeq = -1; private seenEnt = new Set<number>(); private jumped = false;
   private habit = { atk: 0, blk: 0, n: 0 }; private lastOppSeq = -1;
-  private bossStep = 0;
+  private bossStep = 0; private pat = 'LLL';
+  private static PATS = ['LLL', 'LLH', 'LHH', 'HHH', 'HLL', 'HHL'];
   /** mode latihan: 'stand' | 'block' | null */
   dummy: string | null = null;
 
   constructor(public L: BotLevel, private boss = false) { this.react = rnd(L.react[0], L.react[1]); }
 
-  private setPlan(p: string, t: number, presses = 0) { this.plan = p; this.planT = t; this.presses = presses; this.jumped = false; }
+  private setPlan(p: string, t: number, presses = 0) {
+    this.plan = p; this.planT = t; this.presses = presses; this.jumped = false;
+    // kombo: pilih salah satu pola L/H, dipotong sesuai jumlah tekanan
+    if (p === 'combo') this.pat = Bot.PATS[Math.floor(Math.random() * Bot.PATS.length)].slice(0, Math.max(1, presses));
+  }
 
   update(dt: number, me: Fighter, opp: Fighter, m: Match): Input {
     const inp = noInput(), L = this.L;
@@ -125,7 +130,7 @@ export class Bot {
         break;
       case 'combo':
         if (dist > reach && can) inp.mx = to;
-        else if (this.presses > 0 && (can || (me.state === 'attack' && me.phase === 3))) { inp.atk = true; this.presses--; }
+        else if (this.presses > 0 && (can || (me.state === 'attack' && me.phase === 3))) { if (this.pat[this.pat.length - this.presses] === 'H') inp.hvy = true; else inp.atk = true; this.presses--; }
         else if (this.presses <= 0 && can) {
           if (me.cd2 <= 0 && me.def.moves.s2.ai && dist <= me.def.moves.s2.ai[1] && dist >= me.def.moves.s2.ai[0] && Math.random() < L.skill * .5) inp.s2 = true;
           this.planT = 0;
@@ -136,7 +141,7 @@ export class Bot {
         break;
       case 'jumpin':
         if (!this.jumped && can) { inp.up = true; inp.mx = to; this.jumped = true; }
-        else if (me.state === 'jump') { inp.mx = to; if (me.vy < 2 && dist < reach + .6) inp.atk = true; }
+        else if (me.state === 'jump') { inp.mx = to; if (me.vy < 2 && dist < reach + .6) { if (Math.random() < .35) inp.hvy = true; else inp.atk = true; } }
         else if (this.jumped && can) this.setPlan('combo', .8, Math.min(2, L.combo));
         break;
       case 's1': if (can) { inp.s1 = true; this.planT = Math.min(this.planT, .15); } break;
