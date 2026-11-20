@@ -12,6 +12,7 @@ export class Bot {
   private seenSeq = -1; private punSeq = -1; private seenEnt = new Set<number>(); private jumped = false;
   private habit = { atk: 0, blk: 0, n: 0 }; private lastOppSeq = -1;
   private bossStep = 0; private pat = 'LLL';
+  private downSeq = -1; private escape = false; private chaseSeq = -1; private pressSeq = -1;
   private static PATS = ['LLL', 'LLH', 'LHH', 'HHH', 'HLL', 'HHL'];
   /** mode latihan: 'stand' | 'block' | null */
   dummy: string | null = null;
@@ -42,6 +43,16 @@ export class Bot {
     if (s.block && dist < 2.5 && Math.random() < dt * 3) { this.habit.blk++; this.habit.n++; }
     const blkRate = this.habit.n > 6 ? this.habit.blk / this.habit.n : .3;
 
+    // 0. terjatuh/terlempar: dash untuk kebal & lepas dari tekanan (diputuskan sekali tiap kena pukul)
+    if (me.state === 'down') {
+      if (this.downSeq !== me.hitSeq) { this.downSeq = me.hitSeq; this.escape = Math.random() < Math.min(.9, L.dodge * 1.5 + L.block * .4); }
+      const danger = dist < 3 || opp.state === 'attack';
+      if (this.escape && me.stam >= 1 && danger && (me.landed ? me.st > .1 : me.comboN >= 3)) {
+        this.escape = false; inp.dash = true;
+        if (dist < 2 && Math.abs(me.x - to * 2.5) < edge) inp.mx = -to; // ada ruang: dash menjauh; terpojok: kebal di tempat
+      }
+      return inp;
+    }
     if (!me.actionable && me.state !== 'attack' && me.state !== 'jump') return inp;
 
     // 1. sedang menahan tangkisan
@@ -55,7 +66,7 @@ export class Bot {
       this.seenSeq = s.seq; this.react = rnd(L.react[0], L.react[1]);
       const canBlock = me.stam >= 1 || !L.read, r = Math.random();
       if (r < L.block && canBlock) { this.blockT = .3; this.counter = Math.random() < L.punish; inp.block = true; return inp; }
-      if (r < L.block + L.dodge && me.stam >= 1 && Math.abs(me.x - to * 2) < edge) { inp.dash = true; inp.mx = -to; return inp; }
+      if (r < L.block + L.dodge && me.stam >= 1) { inp.dash = true; if (Math.abs(me.x - to * 2) < edge) inp.mx = -to; return inp; } // terpojok: kebal di tempat
     }
     // 3. proyektil dan zona yang ditandai
     if (me.actionable) for (const e of m.ents) {
@@ -89,13 +100,23 @@ export class Bot {
       const open = s.state === 'hit' || s.phase === 3 || s.phase === 1;
       if (inR && !(u.spawn === 'quake' && s.y > .1) && Math.random() < dt * (L.read ? (open ? 30 : s.block ? 0 : .8) : L.ult * (open ? 12 : 2.5))) { inp.ult = true; return inp; }
     }
+    // 5b. kejar lawan yang terjatuh: serangan bawah ke lantai (knockup) atau lompat untuk kombo udara
+    if (L.combo >= 2 && s.state === 'down' && me.actionable && this.chaseSeq !== opp.hitSeq) {
+      if (opp.landed && dist < reach + .4) {
+        this.chaseSeq = opp.hitSeq;
+        if (Math.random() < L.punish + .3) { inp.down = true; if (Math.random() < .5) inp.hvy = true; else inp.atk = true; this.setPlan('combo', 1.1, L.combo); return inp; }
+      } else if (!opp.landed && opp.y > .4 && dist < 3) {
+        this.chaseSeq = opp.hitSeq;
+        if (Math.random() < L.punish + .2) { this.setPlan('jumpin', .9); }
+      } else if (opp.landed && dist < 4.5) { inp.mx = to; if (dist > 2.5 && me.stam >= 2) inp.dash = true; return inp; }
+    }
     // pola bos: serbu → kombo → jurus → jeda terbuka (bisa dipelajari)
     if (this.boss && me.actionable && this.planT <= 0) {
       const st = this.bossStep++ % 4;
       if (st === 0) this.setPlan('combo', 1.6, 3);
-      else if (st === 1) this.setPlan('s2', .5);
+      else if (st === 1) this.setPlan('s1', .5);
       else if (st === 2) this.setPlan('taunt', 1.15);
-      else this.setPlan(dist > 3 ? 's1' : 'retreat', .5);
+      else this.setPlan(dist > 3 && me.def.moves.s2 ? 's2' : 'retreat', .5);
     }
 
     // 6. berpikir
@@ -104,10 +125,10 @@ export class Bot {
       let aggr = L.aggr;
       if (L.elem) { const e = elemMul(me.elem, opp.elem); aggr += e > 1 ? .12 : e < 1 ? -.1 : 0; }
       if (L.read) aggr += blkRate > .45 ? .12 : this.habit.n > 6 && blkRate < .15 ? -.12 : 0;
-      const mvs = me.def.moves, hpR = me.hp / me.def.hp;
+      const mvs = me.def.moves;
       const opts: [string, number][] = [];
-      const skillOk = (k: 's1' | 's2') => (k === 's1' ? me.cd1 : me.cd2) <= 0 && (mvs[k].aiHeal ? hpR < .75 : dist >= mvs[k].ai![0] && dist <= mvs[k].ai![1]);
-      for (const k of ['s1', 's2'] as const) if (skillOk(k)) opts.push([k, L.skill * (mvs[k].aiHeal ? 1.5 : 1)]);
+      if (me.cd1 <= 0 && dist >= mvs.s1.ai![0] && dist <= mvs.s1.ai![1]) opts.push(['s1', L.skill]);
+      if (mvs.s2 && me.cd2 <= 0 && dist >= mvs.s2.ai![0] && dist <= mvs.s2.ai![1]) opts.push(['s2', L.skill]);
       if (dist > 4.5) { opts.push(['approach', aggr], ['wait', (1 - aggr) * .6]); }
       else if (dist > reach + .5) { opts.push(['approach', aggr], ['wait', (1 - aggr) * .4], ['jumpin', .07 + L.dodge * .1], ['retreat', L.arena ? .12 : .05]); }
       else { opts.push(['combo', aggr], ['guard', L.block * (L.read && me.stam < 1.5 ? .1 : .45) * (1.3 - aggr)], ['retreat', .08 + (L.elem ? .06 : 0)], ['wait', (1 - aggr) * .25]); }
@@ -130,9 +151,9 @@ export class Bot {
         break;
       case 'combo':
         if (dist > reach && can) inp.mx = to;
-        else if (this.presses > 0 && (can || (me.state === 'attack' && me.phase === 3))) { if (this.pat[this.pat.length - this.presses] === 'H') inp.hvy = true; else inp.atk = true; this.presses--; }
+        else if (this.presses > 0 && (can || (me.state === 'attack' && me.seq !== this.pressSeq && (me.move!.heavy ? me.mt >= me.su + me.ac + me.re * .5 - .1 : me.phase === 3 || me.hitDone)))) { this.pressSeq = me.seq; if (this.pat[this.pat.length - this.presses] === 'H') inp.hvy = true; else inp.atk = true; this.presses--; }
         else if (this.presses <= 0 && can) {
-          if (me.cd2 <= 0 && me.def.moves.s2.ai && dist <= me.def.moves.s2.ai[1] && dist >= me.def.moves.s2.ai[0] && Math.random() < L.skill * .5) inp.s2 = true;
+          if (me.cd1 <= 0 && dist <= me.def.moves.s1.ai![1] && dist >= me.def.moves.s1.ai![0] && Math.random() < L.skill * .5) inp.s1 = true;
           this.planT = 0;
         }
         break;
@@ -141,11 +162,12 @@ export class Bot {
         break;
       case 'jumpin':
         if (!this.jumped && can) { inp.up = true; inp.mx = to; this.jumped = true; }
-        else if (me.state === 'jump') { inp.mx = to; if (me.vy < 2 && dist < reach + .6) { if (Math.random() < .35) inp.hvy = true; else inp.atk = true; } }
+        else if (me.state === 'jump') { inp.mx = to; if ((me.vy < 2 || s.y > .4) && dist < (s.y > .4 ? reach * .9 : reach + .6) && Math.abs(s.y - me.y) < 1.6) { if (Math.random() < .35) inp.hvy = true; else inp.atk = true; } }
+        else if (me.state === 'attack' && me.move?.air && me.hitDone) { if (Math.random() < .25) inp.hvy = true; else inp.atk = true; }
         else if (this.jumped && can) this.setPlan('combo', .8, Math.min(2, L.combo));
         break;
       case 's1': if (can) { inp.s1 = true; this.planT = Math.min(this.planT, .15); } break;
-      case 's2': if (can) { inp.s2 = true; this.planT = Math.min(this.planT, .15); } break;
+      case 's2': if (can) { inp.s1 = inp.down = true; this.planT = Math.min(this.planT, .15); } break;
       case 'taunt': case 'wait': break;
     }
     // jangan berjalan keluar dari tepi arena

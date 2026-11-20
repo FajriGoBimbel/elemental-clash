@@ -97,7 +97,7 @@ function charInfo(c: CharDef) {
   const E = ELEMS[c.elem];
   return `<h2>${c.name}</h2><div class="row">${etag(c.elem)}<span class="mut">${tr(c.role)}</span></div><p>${tr(c.style)}</p>
     <div class="stats">${STAT().map((s, i) => `<span>${s}</span><div class="bar">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= c.stats[i] ? 'on' : ''}"></i>`).join('')}</div>`).join('')}</div>
-    <div class="moves">${(['s1', 's2', 'ult'] as const).map((k, i) => `<div class="mv"><b>${[T('Jurus 1', 'Skill 1'), T('Jurus 2', 'Skill 2'), T('Pamungkas', 'Ultimate')][i]}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc || ['', ''])}</span></div>`).join('')}</div>
+    <div class="moves">${(['s1', 'ult'] as const).map((k, i) => `<div class="mv"><b>${[T('Spesial', 'Special'), T('Pamungkas', 'Ultimate')][i]}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc || ['', ''])}</span></div>`).join('')}</div>
     <div class="match"><span class="up">▲ ${T('Kuat', 'Strong')}: ${E.strong.map(icon).join('')}</span><span class="dn">▼ ${T('Lemah', 'Weak')}: ${E.weak.map(icon).join('')}</span></div>`;
 }
 const thumb = (c: CharDef, sel: boolean, a = 'pick', lock = false) => `<button class="th ${sel ? 'sel' : ''} ${lock ? 'lock' : ''}" data-a="${a}" data-v="${c.id}" style="${elVar(c.elem)};background-image:url(${portraits[c.id]})" aria-label="${c.name}">${icon(c.elem)}${lock ? `<span class="price coins">${c.price}</span>` : ''}</button>`;
@@ -298,10 +298,10 @@ function movesHtml(c: CharDef) {
   return `<div class="moves" style="${elVar(c.elem)}">
     <div class="mv"><b>${T('Serangan Ringan', 'Light Attack')}</b><span>${T('Tekan beruntun untuk kombo jab, cross, hook. Di udara: tendangan lompat. Sambil menunduk: sapuan.', 'Tap repeatedly for a jab, cross, hook combo. In the air: jump kick. While crouching: sweep.')}</span></div>
     <div class="mv"><b>${T('Serangan Berat', 'Heavy Attack')}</b><span><strong>${tr(c.moves.hv.name!)}</strong> — ${T('Tekan beruntun untuk kombo teep, roundhouse, kick: ritmenya lebih lambat dari serangan ringan tapi kuat, tendangan terakhir menjatuhkan lawan. Di udara: tendangan menukik. Sambil menunduk: pukulan ke atas, ampuh melawan lompatan.', 'Tap repeatedly for a teep, roundhouse, kick combo: slower rhythm than light attacks but strong, the last kick knocks the foe down. In the air: diving kick. While crouching: rising strike, great against jump-ins.')}</span></div>
-    ${(['s1', 's2', 'ult'] as const).map((k, i) => `<div class="mv"><b>${[T('Jurus 1', 'Skill 1'), T('Jurus 2', 'Skill 2'), T('Pamungkas', 'Ultimate')][i]}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc || ['', ''])}${c.moves[k].cd ? ` <span class="mut">(${c.moves[k].cd} ${T('dtk', 's')})</span>` : ''}</span></div>`).join('')}
+    ${(['s1', 'ult'] as const).map((k, i) => `<div class="mv"><b>${[T('Spesial', 'Special'), T('Pamungkas', 'Ultimate')][i]}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc || ['', ''])}${c.moves[k].cd ? ` <span class="mut">(${c.moves[k].cd} ${T('dtk', 's')})</span>` : ''}</span></div>`).join('')}
     <div class="mv"><b>${T('Kombo', 'Combos')}</b><span>${COMBOS.map(([k, n]) => `<strong>${k}</strong> ${tr(n)}`).join(' · ')} <span class="mut">(L = ${T('ringan', 'light')}, H = ${T('berat', 'heavy')})</span></span></div>
     <div class="mv"><b>${T('Tangkis', 'Block')}</b><span>${T('Menahan 85% damage. Tiap serangan yang ditahan memakai stamina; stamina habis = tangkisan jebol.', 'Blocks 85% of damage. Each blocked hit costs stamina; at zero your guard breaks.')}</span></div>
-    <div class="mv"><b>Dash</b><span>${T('Melesat cepat dan kebal sesaat. Memakai 1 stamina; pulih penuh dalam 3 detik.', 'A quick burst with brief invulnerability. Costs 1 stamina; fully recovers in 3 seconds.')}</span></div></div>`;
+    <div class="mv"><b>Dash</b><span>${T('Dengan arah: melesat cepat dan kebal sesaat. Tanpa arah: kebal di tempat. Saat terjatuh atau terlempar: lepas dari kombo. Memakai 1 stamina; pulih penuh dalam 3 detik.', 'With a direction: a quick burst with brief invulnerability. Without: invulnerable in place. While knocked down or airborne: break free. Costs 1 stamina; fully recovers in 3 seconds.')}</span></div></div>`;
 }
 function pause(by = -1) {
   if (fight?.guest) return fight.guest.onPause(); // layar kedua: minta host menjeda
@@ -375,6 +375,26 @@ function confirmBuy(name: string, price: number, yes: () => void) {
   const o = modal(`<h2>${T('Buka', 'Unlock')} ${name}?</h2><p>${T('Harga', 'Price')}: <span class="coins">${price}</span> · ${T('Koinmu', 'Your coins')}: ${coins()}</p>
     <div class="mbtns"><button class="btn pri" data-a="yes">${T('Buka', 'Unlock')}</button><button class="btn" data-a="no">${T('Batal', 'Cancel')}</button></div>`, { yes: () => { o.remove(); yes(); }, no: () => o.remove() });
 }
+
+// ---------- cheat: tekan \ di menu utama ----------
+const CHEATS: Record<string, () => string> = {
+  'rich-guy': () => { save.coins += 1000; persist(); sound.coin(); return T('+1000 koin!', '+1000 coins!'); },
+};
+addEventListener('keydown', e => {
+  if (e.code !== 'Backslash' || !$('.scr.menu') || $('.over')) return;
+  e.preventDefault();
+  const o = modal(`<h2>Command</h2><input class="cmd" type="text" autocomplete="off" spellcheck="false" aria-label="Command">
+    <div class="mbtns"><button class="btn pri" data-a="run">${T('Jalankan', 'Run')}</button><button class="btn" data-a="no">${T('Batal', 'Cancel')}</button></div>`, {
+    run: () => run(), no: () => o.remove(),
+  });
+  const inp = $('.cmd', o) as HTMLInputElement;
+  const run = () => {
+    const f = CHEATS[inp.value.trim().toLowerCase()]; o.remove();
+    if (f) { const msg = f(); menu(); toast(msg); } else { sound.deny(); toast(T('Kode tidak dikenal.', 'Unknown code.')); }
+  };
+  inp.addEventListener('keydown', k => { k.stopPropagation(); if (k.key === 'Enter') run(); else if (k.key === 'Escape') o.remove(); });
+  inp.focus();
+});
 
 // ---------- pengaturan ----------
 function settings() {
@@ -554,7 +574,7 @@ function vsFeedback(t: number) {
   const v = vs, f = fight; if (!v?.room || !f || v.phase !== 'fight') return;
   if (v.cfg === 'D' && t - v.ssT >= 15) { v.ssT = t; v.room.state(1, snapshot(f.m, v.evq.splice(0))); }
   if (t - v.fbT < 66) return; v.fbT = t;
-  for (const i of v.room.slots) { const x = f.m.f[i]; v.room.fb(i, { hp: Math.round(Math.max(0, x.hp)), mh: x.def.hp, en: Math.round(x.energy), c1: +(x.cd1 / x.def.moves.s1.cd!).toFixed(2), c2: +(x.cd2 / x.def.moves.s2.cd!).toFixed(2), st: +x.stam.toFixed(2), w: f.m.wins }); }
+  for (const i of v.room.slots) { const x = f.m.f[i]; v.room.fb(i, { hp: Math.round(Math.max(0, x.hp)), mh: x.def.hp, en: Math.round(x.energy), c1: +(x.cd1 / x.def.moves.s1.cd!).toFixed(2), st: +x.stam.toFixed(2), w: f.m.wins }); }
 }
 function vsPauseModal() {
   const f = fight!; f.pauseEl?.remove(); const by = f.pauseBy;
