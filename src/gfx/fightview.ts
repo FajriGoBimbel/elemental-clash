@@ -13,12 +13,16 @@ const V = new THREE.Vector3();
 
 class FighterView {
   model: CharModel; shadow: THREE.Mesh; target = P(); yaw: number; flashT = 0; walkPh = 0; lastX: number; lastHit = 0; alt = false;
+  aura: THREE.Mesh; auraOn = false;
   private ctx: AnimCtx = { state: 'idle', u: 0, st: 0, t: 0, vy: 0, walkPh: 0, back: false, landed: false, alt: false };
   constructor(public f: Fighter, par: THREE.Group, alt = false) {
     this.model = new CharModel(f.def, f.elem, alt);
     this.shadow = new THREE.Mesh(new THREE.CircleGeometry(.55, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .35, depthWrite: false }));
     this.shadow.rotation.x = -Math.PI / 2;
-    par.add(this.model.group, this.shadow);
+    // aura bundar penanda kebal (dash tanpa arah)
+    this.aura = new THREE.Mesh(new THREE.SphereGeometry(1.15, 28, 18), new THREE.MeshBasicMaterial({ color: ELEMS[f.elem].col, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.aura.scale.set(1, 1.05, .8); this.aura.visible = false;
+    par.add(this.model.group, this.shadow, this.aura);
     this.yaw = f.face * (Math.PI / 2 - .42); this.lastX = f.x;
   }
   update(m: Match, rdt: number, t: number, fx: FX) {
@@ -29,8 +33,17 @@ class FighterView {
     if (f.state === 'attack' && f.move) {
       c.anim = f.move.anim;
       c.u = f.mt < f.su ? f.mt / f.su : f.mt < f.su + f.ac ? 1 + (f.mt - f.su) / f.ac : 2 + Math.min(1, (f.mt - f.su - f.ac) / f.re);
-    } else if (m.phase === 'ko' && m.winner >= 0 && m.winner !== f.idx && f.actionable && m.pt > .6) c.state = 'lose';
+    } else if (f.state === 'dash' && !f.dashDir) c.state = 'immune';
+    else if (m.phase === 'ko' && m.winner >= 0 && m.winner !== f.idx && f.actionable && m.pt > .6) c.state = 'lose';
     poseFor(c, this.target);
+    if (f.state === 'dash' && !f.dashDir) this.auraOn = true; else if (f.inv <= 0 || f.state === 'hit' || f.state === 'down') this.auraOn = false;
+    const am = this.aura.material as THREE.MeshBasicMaterial;
+    am.opacity += ((this.auraOn ? .28 : 0) - am.opacity) * Math.min(1, rdt * 18);
+    this.aura.visible = am.opacity > .01;
+    if (this.aura.visible) {
+      this.aura.position.set(f.x, f.y + .95, 0); this.aura.scale.setScalar(1 + Math.sin(t * 14) * .04); this.aura.scale.z *= .8;
+      if (this.auraOn && Math.random() < .8) { const a = rnd(0, Math.PI * 2); fx.one(f.x + Math.cos(a) * 1.1, f.y + .95 + Math.sin(a) * 1.1, .3, -Math.cos(a) * .6, -Math.sin(a) * .6, 0, .3, .1, ELEMS[f.elem].acc); }
+    }
     const fast = f.state === 'attack' || f.state === 'hit' || f.state === 'block' || f.state === 'dash';
     md.apply(this.target, rdt, fast ? 26 : 14, t);
     md.group.position.set(f.x, f.y, 0);
@@ -47,7 +60,7 @@ class FighterView {
     if (f.slow > 0 && Math.random() < .4) fx.one(f.x + rnd(-.4, .4), f.y + rnd(.1, .7), .2, 0, rnd(-.4, -.1), 0, .6, .12, 0x58d68a, 0, true);
     if (f.root > 0 && Math.random() < .6) fx.one(f.x + rnd(-.45, .45), f.y + rnd(0, .9), .25, 0, rnd(.2, .8), 0, .5, .13, Math.random() < .5 ? 0x7b4f2c : 0x2fc46c, 0, true);
     if (f.energy >= 100 && Math.random() < .5) fx.one(f.x + rnd(-.4, .4), f.y + rnd(0, .4), rnd(-.3, .3), 0, rnd(1.5, 3), 0, .5, .1, ELEMS[f.elem].acc);
-    if (f.state === 'dash' && Math.random() < .9) fx.one(f.x, cy + rnd(-.7, .5), 0, -f.dashDir * rnd(2, 5), 0, 0, .25, .14, ELEMS[f.elem].acc, 0, false, 2);
+    if (f.state === 'dash' && f.dashDir && Math.random() < .9) fx.one(f.x, cy + rnd(-.7, .5), 0, -f.dashDir * rnd(2, 5), 0, 0, .25, .14, ELEMS[f.elem].acc, 0, false, 2);
   }
 }
 

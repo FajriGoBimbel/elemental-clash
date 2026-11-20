@@ -19,7 +19,7 @@ export class Hud {
       ${side(m.f[1], 'p2')}</div>
       <div class="msg"></div><div class="notice"></div><div class="combo l"></div><div class="combo r"></div><div class="ultban"></div><div class="pops"></div>
       <button class="pause" aria-label="${T('Jeda', 'Pause')}">II</button>
-      ${matchMedia('(hover: hover) and (pointer: fine)').matches ? `<div class="keys"><b>A/D</b> ${T('gerak', 'move')} · <b>W</b> ${T('lompat', 'jump')} · <b>S</b> ${T('tunduk', 'crouch')} · <b>J</b> ${T('serang', 'attack')} · <b>K/L</b> ${T('jurus', 'skills')} · <b>I</b> ${T('tangkis', 'block')} · <b>O</b> dash · <b>U</b> ${T('pamungkas', 'ultimate')}</div>` : ''}`;
+      ${matchMedia('(hover: hover) and (pointer: fine)').matches ? `<div class="keys"><b>A/D</b> ${T('gerak', 'move')} · <b>W</b> ${T('lompat', 'jump')} · <b>S</b> ${T('tunduk', 'crouch')} · <b>J</b> ${T('ringan', 'light')} · <b>K</b> ${T('berat', 'heavy')} · <b>L</b> ${T('spesial', 'special')} · <b>I</b> ${T('pamungkas', 'ultimate')} · <b>Space</b> ${T('tangkis', 'block')} · <b>Shift/O</b> dash</div>` : ''}`;
     parent.appendChild(el);
     for (const k of ['timer', 'rnd', 'msg', 'notice', 'ultban', 'pops', 'pause']) this.q[k] = $('.' + k, el);
     if (m.training) { this.q.timer.textContent = '∞'; $('.pips', el).style.display = 'none'; this.q.rnd.textContent = T('Latihan', 'Training'); }

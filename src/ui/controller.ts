@@ -231,7 +231,7 @@ function padOn(id: string) {
 }
 function fb(m: any) {
   if (!pad) return;
-  pad.sync({ c1: m.c1, c2: m.c2, en: m.en, st: m.st });
+  pad.sync({ c1: m.c1, en: m.en, st: m.st });
   const hp = $('.php i'), en = $('.pen i'), w = $('.cpad .wins');
   if (hp) { hp.style.width = Math.max(0, m.hp / m.mh) * 100 + '%'; hp.parentElement!.classList.toggle('low', m.hp / m.mh < .25); }
   if (en) { en.style.width = Math.min(100, m.en) + '%'; en.parentElement!.classList.toggle('full', m.en >= 100); }

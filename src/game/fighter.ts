@@ -1,8 +1,8 @@
 import type { CharDef, Move, Elem } from '../data';
 import type { Match } from './match';
 
-export interface Input { mx: number; up: boolean; down: boolean; atk: boolean; hvy: boolean; s1: boolean; s2: boolean; block: boolean; dash: boolean; ult: boolean }
-export const noInput = (): Input => ({ mx: 0, up: false, down: false, atk: false, hvy: false, s1: false, s2: false, block: false, dash: false, ult: false });
+export interface Input { mx: number; up: boolean; down: boolean; atk: boolean; hvy: boolean; s1: boolean; block: boolean; dash: boolean; ult: boolean }
+export const noInput = (): Input => ({ mx: 0, up: false, down: false, atk: false, hvy: false, s1: false, block: false, dash: false, ult: false });
 export type State = 'idle' | 'walk' | 'crouch' | 'jump' | 'attack' | 'block' | 'dash' | 'hit' | 'down' | 'getup' | 'ko' | 'win' | 'fall';
 
 const G = 32;
@@ -16,7 +16,7 @@ export class Fighter {
   cd1 = 0; cd2 = 0; burn = 0; burnTick = 0; slow = 0; root = 0; inv = 0; lock = 0; stunT = 0;
   landed = false; airUsed = false; dashDir = 1; comboN = 0; hitSeq = 0;
   elem: Elem;
-  private buf = { atk: 0, hvy: 0, s1: 0, s2: 0, dash: 0, ult: 0 };
+  private buf = { atk: 0, hvy: 0, s1: 0, dash: 0, ult: 0 };
 
   constructor(public def: CharDef, public idx: number) { this.elem = def.elem; this.hp = def.hp; }
 
@@ -24,7 +24,7 @@ export class Fighter {
     this.x = x; this.y = 0; this.vx = this.vy = this.push = 0; this.face = face; this.hp = this.def.hp;
     this.stam = MAX_STAM; this.stamWait = 0; this.state = 'idle'; this.st = 0; this.move = null;
     this.cd1 = this.cd2 = this.burn = this.slow = this.root = this.inv = this.lock = 0; this.comboN = 0;
-    this.buf = { atk: 0, hvy: 0, s1: 0, s2: 0, dash: 0, ult: 0 };
+    this.buf = { atk: 0, hvy: 0, s1: 0, dash: 0, ult: 0 };
   }
   get grounded() { return this.y <= 0.001; }
   get actionable() { return this.state === 'idle' || this.state === 'walk' || this.state === 'crouch' || (this.state === 'block' && this.lock <= 0); }
@@ -44,24 +44,33 @@ export class Fighter {
   setHit(stun: number, kx: number, ky: number, launch: boolean) {
     this.move = null; this.lock = 0; this.st = 0; this.hitSeq++;
     if (launch || !this.grounded) {
-      this.state = 'down'; this.landed = false; this.vx = kx; this.vy = Math.max(ky, 5); this.y = Math.max(this.y, .02);
+      this.state = 'down'; this.landed = false; this.vx = kx; this.vy = ky < 0 ? ky : Math.max(ky, 5); // ky negatif = dibanting ke bawah this.y = Math.max(this.y, .02);
     } else { this.state = 'hit'; this.stunT = stun; this.vx = 0; this.push = kx; }
   }
 
   private tryActions(inp: Input, m: Match): boolean {
     const mv = this.def.moves, b = this.buf;
     if (b.ult > 0 && this.energy >= 100) { b.ult = 0; this.energy = 0; this.startMove(mv.ult, m); m.freeze = 1.0; m.ev({ t: 'ult', f: this }); return true; }
-    if (b.s2 > 0 && this.cd2 <= 0) { b.s2 = 0; this.cd2 = mv.s2.cd!; this.startMove(mv.s2, m); return true; }
-    if (b.s1 > 0 && this.cd1 <= 0) { b.s1 = 0; this.cd1 = mv.s1.cd!; this.startMove(mv.s1, m); return true; }
+    // bawah + Spesial memakai spesial kedua bila karakter punya (saat ini hanya bos Omnis)
+    if (b.s1 > 0 && inp.down && mv.s2) { if (this.cd2 <= 0) { b.s1 = 0; this.cd2 = mv.s2.cd!; this.startMove(mv.s2, m); return true; } }
+    else if (b.s1 > 0 && this.cd1 <= 0) { b.s1 = 0; this.cd1 = mv.s1.cd!; this.startMove(mv.s1, m); return true; }
     if (b.hvy > 0) { b.hvy = 0; this.startMove(inp.down ? mv.hvLow : mv.hv, m); return true; }
     if (b.atk > 0) { b.atk = 0; this.startMove(inp.down ? mv.low : mv.a1, m); return true; }
-    if (b.dash > 0 && this.stam >= 1 && this.root <= 0) {
-      b.dash = 0; this.stam -= 1; this.stamWait = .8; this.state = 'dash'; this.st = 0;
-      this.dashDir = Math.abs(inp.mx) > .2 ? Math.sign(inp.mx) : this.face; this.inv = Math.max(this.inv, .16);
-      m.ev({ t: 'dash', f: this }); return true;
-    }
-    return false;
+    return this.tryDash(inp, m);
   }
+
+  /** Dash + arah = melesat; dash tanpa arah = kebal di tempat (dashDir 0). Dari posisi terbaring = bangun cepat. */
+  private tryDash(inp: Input, m: Match): boolean {
+    const dir = Math.abs(inp.mx) > .2 ? Math.sign(inp.mx) : 0, wake = this.state === 'down';
+    if (!(this.buf.dash > 0 && this.stam >= 1 && (this.root <= 0 || !dir))) return false;
+    this.buf.dash = 0; this.stam -= 1; this.stamWait = .8; this.state = 'dash'; this.st = 0; this.move = null;
+    this.dashDir = dir; this.inv = Math.max(this.inv, wake ? (dir ? .3 : .5) : dir ? .16 : .3);
+    if (wake) this.comboN = 0;
+    m.ev({ t: 'dash', f: this }); return true;
+  }
+
+  /** Menyimpan tombol sekali-tekan ke buffer tanpa menjalankan simulasi (dipakai saat hitstop). */
+  hold(inp: Input) { for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as const) if (inp[k]) this.buf[k] = .16; }
 
   update(dt: number, inp: Input, opp: Fighter, m: Match) {
     const d = this.def, b = this.buf;
@@ -74,7 +83,7 @@ export class Fighter {
     }
     if (d.regen && this.alive && this.hp > 0) this.hp = Math.min(d.hp, this.hp + d.hp * d.regen * dt);
     if (this.stamWait > 0) this.stamWait -= dt; else this.stam = Math.min(MAX_STAM, this.stam + dt);
-    for (const k of ['atk', 'hvy', 's1', 's2', 'dash', 'ult'] as const) b[k] = inp[k] ? .16 : b[k] - dt;
+    for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as const) b[k] = inp[k] ? .16 : b[k] - dt;
     this.st += dt;
     const spd = d.spd * (this.slow > 0 ? .55 : 1);
 
@@ -111,18 +120,23 @@ export class Fighter {
         if (nx && this.mt >= this.su + this.ac + (this.hitDone && !mv.heavy ? 0 : this.re * .5)) {
           b.atk = b.hvy = 0; this.face = opp.x >= this.x ? 1 : -1; this.startMove(d.moves[nx], m); break;
         }
+        // knockup (otg) yang kena boleh langsung dibatalkan ke serangan apa pun agar lawan yang terangkat bisa dikejar
+        if (mv.otg && this.hitDone && this.grounded && this.mt >= this.su + this.ac) { this.face = opp.x >= this.x ? 1 : -1; if (this.tryActions(inp, m)) break; }
+        // dash-cancel: begitu pukulan darat kena, dash langsung keluar tanpa menunggu recovery agar bisa lanjut kombo
+        if (this.hitDone && this.grounded && !mv.air && this.tryDash(inp, m)) break;
         if (this.mt >= total) { this.move = null; this.state = this.grounded ? 'idle' : 'jump'; this.st = 0; }
         break;
       }
       case 'dash':
         this.vx = this.dashDir * 14;
-        if (this.st >= .2) { this.state = 'idle'; this.vx = 0; }
+        if (this.st >= (this.dashDir ? .2 : .3)) { this.state = this.grounded ? 'idle' : 'jump'; this.st = 0; this.vx = 0; this.airUsed = true; }
         break;
       case 'hit':
         if (this.st >= this.stunT) { this.state = 'idle'; this.st = 0; }
         break;
       case 'down':
-        if (this.landed && this.st >= .5) { this.state = 'getup'; this.st = 0; this.inv = .5; }
+        if (this.tryDash(inp, m)) break; // terbaring maupun masih terlempar di udara
+        if (this.landed && this.st >= .8) { this.state = 'getup'; this.st = 0; this.inv = .5; }
         break;
       case 'getup':
         if (this.st >= .28) { this.state = 'idle'; this.st = 0; this.comboN = 0; }
@@ -132,9 +146,10 @@ export class Fighter {
     }
 
     // fisika
+    // vy !== 0: petarung yang dibanting (vy < 0) di y = 0 tetap harus diproses agar tercatat mendarat.
     // pakai y > 0 (bukan !grounded): ambang grounded 0,001 dulu membuat petarung yang jatuh
     // berhenti tepat di atas lantai tanpa pernah tercatat mendarat, sehingga tidak bisa bangun.
-    if (this.y > 0 || this.vy > 0 || this.state === 'fall') {
+    if (this.y > 0 || this.vy !== 0 || this.state === 'fall') {
       this.vy -= G * dt; this.y += this.vy * dt;
       if (m.wind && this.state !== 'fall') this.x += m.wind * dt * .9;
       if (this.y <= .001 && this.state !== 'fall') {
