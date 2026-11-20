@@ -72,6 +72,11 @@ const ATK: Record<string, [number, Pose][]> = {
     [2.5, P({ lean: 34, y: -.03, hd: -18, hdT: -40, aL: [66, 8, 138], aR: [58, 8, 140], lL: [14, 30, 4], lR: [40, 118, 0] })],
     [3, P()]],
   kick: atk({ lR: [-30, 50, 8], lL: [14, 22, 0], lean: 14, twist: -14, aL: [70, 30, 90], aR: [20, 30, 90] }, { lR: [134, 0, 10], lL: [-6, 6, 0], lean: -34, twist: 22, hd: 14, y: .04, aL: [-30, 42, 20], aR: [-42, 38, 20] }, .8),
+  // lutut udara: paha kanan diangkat tinggi, lutut terlipat menghantam ke depan
+  knee: [[0, P({ lL: [50, 90, 5], lR: [30, 80, 5] })], [.9, P({ lR: [118, 130, 5], lL: [-14, 70, 5], lean: 8, aL: [70, 30, 100], aR: [40, 30, 110], twist: -10 })], [3, P({ lR: [118, 130, 5], lL: [-14, 70, 5], lean: 8, aL: [70, 30, 100], aR: [40, 30, 110], twist: -10 })]],
+  // tendangan kapak: kaki lurus diangkat setinggi mungkin lalu dihantamkan ke bawah
+  axekick: [[0, P({ lL: [40, 80, 5], lR: [30, 70, 5] })], [.85, P({ lR: [150, 4, 5], lL: [-10, 60, 5], lean: -16, aL: [40, 40, 60], aR: [40, 40, 60] })],
+    [1.15, P({ lR: [30, 4, 5], lL: [-10, 60, 5], lean: 22, aL: [-20, 40, 40], aR: [-20, 40, 40] })], [3, P({ lR: [20, 30, 5], lL: [10, 60, 5], lean: 14 })]],
   airkick: [[0, P({ lL: [50, 90, 5], lR: [30, 80, 5] })], [.9, P({ lR: [80, 6, 5], lL: [-28, 98, 5], lean: -12, aL: [70, 28, 70], aR: [-24, 38, 50], twist: 10 })], [3, P({ lR: [80, 6, 5], lL: [-28, 98, 5], lean: -12, aL: [70, 28, 70], aR: [-24, 38, 50], twist: 10 })]],
   sweep: atk({ lL: [78, 128, 10], lR: [50, 118, 10], lean: 22, twist: -16 }, { lL: [76, 132, 10], lR: [84, 6, 2], lean: 10, twist: 44, roll: -10, aL: [20, 40, 40], aR: [-20, 50, 30] }),
   cast: atk({ aR: [-38, 26, 72], aL: [62, 10, 60], twist: -38 }, { aR: [90, 0, 4], aL: [82, -4, 12], twist: 18, lean: 15, lL: [34, 34, 5], lR: [-30, 14, 6] }),
@@ -89,6 +94,8 @@ const POSES = {
   jumpDn: P({ lL: [28, 30, 6], lR: [-12, 42, 6], aL: [104, 44, 30], aR: [96, 46, 34], lean: 2 }),
   crouch: P({ lL: [80, 128, 10], lR: [56, 122, 10], lean: 24, hd: -14 }),
   block: P({ aL: [78, -20, 118], aR: [72, -18, 122], lean: -5, hd: 10, lL: [28, 44, 6], lR: [-22, 36, 8], twist: -8 }),
+  // kebal di tempat: berdiri tegak, lengan menyilang di depan dada
+  immune: P({ aL: [78, -20, 118], aR: [72, -18, 122], lean: 0, hd: 6, lL: [16, 22, 7], lR: [-12, 20, 7], twist: 0 }),
   dash: P({ lean: 32, aL: [-52, 16, 30], aR: [-52, 16, 30], lL: [54, 44, 5], lR: [-44, 30, 6], twist: 0, hd: -18 }),
   hitA: P({ lean: -24, sp: -10, hd: -26, aL: [8, 32, 40], aR: [-4, 38, 50], twist: 18, lL: [10, 24, 6], lR: [-26, 20, 8] }),
   hitB: P({ lean: 18, sp: 10, hd: 20, aL: [30, 30, 70], aR: [24, 34, 80], twist: -30, lL: [20, 40, 6], lR: [-16, 34, 8] }),
@@ -127,6 +134,7 @@ export function poseFor(c: AnimCtx, out: Pose) {
     case 'crouch': out.set(POSES.crouch); return;
     case 'block': out.set(POSES.block); return;
     case 'dash': out.set(POSES.dash); return;
+    case 'immune': out.set(POSES.immune); out[0] = Math.sin(t * 9) * .02; return;
     case 'hit': out.set(c.alt ? POSES.hitB : POSES.hitA); return;
     case 'down': case 'ko': out.set(c.landed ? POSES.lie : POSES.fly); if (!c.landed) out[4] = -40 - Math.min(50, c.st * 160); return;
     case 'getup': seq(c.st, [[0, POSES.lie], [.3, POSES.crouch]], out); return;

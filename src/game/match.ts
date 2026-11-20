@@ -5,7 +5,7 @@ export const W = 9;          // setengah lebar arena (dinding)
 export const RING = 7.6;     // tepi platform Puncak Awan
 export const ROUND_TIME = 60;
 
-export interface HitSpec { dmg: number; kb?: [number, number]; stun?: number; launch?: boolean; strong?: boolean; fx?: StatusFx; ult?: boolean; soft?: boolean }
+export interface HitSpec { dmg: number; kb?: [number, number]; stun?: number; launch?: boolean; strong?: boolean; fx?: StatusFx; ult?: boolean; soft?: boolean; otg?: boolean }
 export interface Ent extends HitSpec {
   id: number; kind: 'proj' | 'zone'; vis: string; owner: Fighter | null; elem: Elem | null;
   x: number; y: number; vx: number; vy: number; g?: number; w: number; h: number; // zone: y..y+h ; proj: pusat y, tinggi h
@@ -45,8 +45,12 @@ export class Match {
 
   step(dt: number, i0: Input, i1: Input) {
     if (this.phase === 'over') return;
-    if (this.freeze > 0) { this.freeze -= dt; return; }
-    if (this.hitstop > 0) { this.hitstop -= dt; return; }
+    // selama jeda (freeze/hitstop) tombol tetap disimpan di buffer agar input kombo tidak hilang
+    if (this.freeze > 0 || this.hitstop > 0) {
+      if (this.phase === 'fight') { this.f[0].hold(i0); this.f[1].hold(i1); }
+      if (this.freeze > 0) this.freeze -= dt; else this.hitstop -= dt;
+      return;
+    }
     this.pt += dt; this.clock += dt;
     for (const s of this.sched) s.t -= dt;
     const due = this.sched.filter(s => s.t <= 0); this.sched = this.sched.filter(s => s.t > 0);
@@ -127,7 +131,8 @@ export class Match {
     }
     if (hi < def.x - .38 || lo > def.x + .38 || y1 < def.y || y0 > def.y + def.hurtH) return;
     att.hitDone = true; att.multiT = mv.multi || 0;
-    this.applyHit(att, def, mv, att.x);
+    // pukulan udara yang kena menahan penyerang sebentar di udara agar kombo udara tersambung
+    if (this.applyHit(att, def, mv, att.x) && mv.air) att.vy = Math.max(att.vy, 5);
   }
 
   private hurtPillar(p: Pillar, dmg: number) {
@@ -148,7 +153,8 @@ export class Match {
   }
 
   applyHit(att: Fighter | null, def: Fighter, s: HitSpec, srcX: number): boolean {
-    if (def.inv > 0 || !def.alive || def.state === 'getup' || def.state === 'win' || (def.state === 'down' && def.landed)) return false;
+    const otg = def.state === 'down' && def.landed; // lawan terbaring: hanya serangan bawah (otg) yang kena
+    if (def.inv > 0 || !def.alive || def.state === 'getup' || def.state === 'win' || (otg && !s.otg)) return false;
     if (this.phase !== 'fight') return false;
     const dir = Math.sign(def.x - srcX) || (att ? att.face : 1);
     let mul = 1 / def.def.def, adv = 0;
@@ -157,7 +163,7 @@ export class Match {
       mul *= att.def.atk * e * (!this.pure && this.arena.elem === att.elem ? ARENA_BONUS : 1);
     }
     if (s.soft) { this.status(def, s.fx); this.ev({ t: 'soft', f: def, fx: s.fx }); return true; }
-    const inCombo = def.state === 'hit' || (def.state === 'down' && !def.landed);
+    const inCombo = def.state === 'hit' || def.state === 'down'; // otg ikut skala kombo agar tidak bisa loop tanpa batas
     def.comboN = inCombo ? def.comboN + 1 : 1;
     const scale = Math.max(.45, 1 - .08 * (def.comboN - 1));
     const blocking = def.state === 'block' && (Math.abs(srcX - def.x) < .3 || Math.sign(srcX - def.x) === def.face);
@@ -177,7 +183,8 @@ export class Match {
       dmg *= scale;
       this.status(def, s.fx);
       const stun = (s.stun ?? .3) + (s.fx?.shock || 0);
-      def.setHit(stun, dir * kb[0], kb[1], !!s.launch || def.comboN >= 9);
+      if (otg) def.setHit(stun, dir * 1, 11, true); // knockup: terangkat tinggi, sedikit terdorong, bisa dikejar
+      else def.setHit(stun, dir * kb[0], kb[1], !!s.launch || def.comboN >= 9);
       if (def.comboN >= 9) def.inv = 1.2;
     }
     def.hp = Math.max(this.training ? 1 : 0, def.hp - dmg); this.lastHurt[def.idx] = this.clock;
