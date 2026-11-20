@@ -3,3 +3,6 @@ dist
 android/app/build
 android/.gradle
 android/build
+.env
+.env.local
+.env.*.local

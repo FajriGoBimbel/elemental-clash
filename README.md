@@ -34,6 +34,14 @@ HP kontroler memilih **Gabung sebagai Kontroler**, memasukkan kode 6 karakter da
   dengan keyboard) dan menjadi Pemain 2 dengan layar sendiri. Host tetap satu-satunya yang menghitung; perangkat kedua
   mengirim input dan menerima snapshot keadaan ±60×/dtk + event (`src/net/sync.ts`) lalu merender arena, HUD, dan suara sendiri.
   Uji: `npm run test:mp2` (tambah `LAN=web` untuk jalur WebRTC).
+- **Joystick HP untuk mode solo:** tombol *Joystick HP* di menu utama membuka ruangan 1 slot. HP bergabung lewat
+  *Main Bareng → Gabung dengan Kode* dan menjadi joystick Pemain 1 di Pertandingan Cepat, Cerita, dan Latihan
+  (keyboard/sentuh di layar tetap aktif bersamaan). HP putus → pertandingan dijeda. Uji: `npm run test:pad`.
+- **Link undangan:** tombol *Bagikan link / QR* di lobi dan di modal Joystick HP menampilkan QR + link `…/?join=KODE`
+  (salin / bagikan lewat menu bawaan HP). Membuka link langsung bergabung dengan kode itu tanpa mengetik; parameter
+  dihapus dari alamat setelah dipakai. Hanya versi web (APK tidak punya alamat yang bisa dibuka HP lain). Uji: `npm run test:share`.
+  Alamat dasar link diatur lewat env **`VITE_SHARE_URL`** (lihat `.env.example`; di Vercel: Project Settings → Environment
+  Variables, lalu redeploy). Kosong = alamat halaman yang sedang dibuka.
 - **Versi web (mis. Vercel):** browser tidak bisa membuka UDP/TCP lokal, jadi dipakai WebRTC DataChannel lewat PeerJS
   (`src/net/transport.ts` → `PeerBus`). Internet hanya untuk perkenalan awal di server sinyal (default: cloud publik PeerJS),
   data permainan mengalir langsung antar-perangkat. Server sinyal sendiri: set `VITE_PEER_HOST`, `VITE_PEER_PORT`,

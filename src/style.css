@@ -355,3 +355,23 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .cpause-b { width: 2.6rem; height: 2.2rem; border-radius: .35rem; background: rgba(255, 255, 255, .1); font-family: var(--disp); font-weight: 700; pointer-events: auto; position: relative; z-index: 5; }
 .watch { position: absolute; left: 0; right: 0; top: 38%; text-align: center; font-family: var(--disp); text-transform: uppercase; letter-spacing: .2em; color: rgba(255, 255, 255, .14); font-size: 1.1rem; pointer-events: none; }
 .scr.still { animation: none; }
+
+/* ---------- joystick HP untuk mode solo ---------- */
+.padb { display: inline-flex; align-items: center; gap: .45rem; margin-right: .8rem; }
+.padb .dev.pad { display: inline-flex; }
+.padb svg { width: 1.45em; height: 1.45em; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.padb.wait svg { color: var(--gold); }
+.padb.on { color: var(--good); box-shadow: inset 0 -2px 0 var(--good); }
+.padm .code { justify-content: center; }
+.padm .code b { width: 2.8rem; height: 3.4rem; font-size: 2rem; }
+.padm .steps { margin: 0; padding-left: 1.2rem; font-size: .85rem; line-height: 1.45; }
+
+/* ---------- bagikan undangan (link + QR) ---------- */
+.sharem.modal { width: min(40rem, 92vw); }
+.share { display: flex; gap: 1.1rem; align-items: center; }
+.share .qr { flex: 0 0 auto; width: min(13rem, 38vh); aspect-ratio: 1; background: #fff; border-radius: .4rem; padding: .35rem; }
+.share .qr svg { width: 100%; height: 100%; display: block; }
+.share .sh-r { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .6rem; font-size: .88rem; line-height: 1.4; }
+.sh-url { width: 100%; font: 500 .82rem var(--body); color: var(--txt); background: rgba(255, 255, 255, .07); border: 1px solid var(--line); border-radius: .3rem; padding: .55rem .7rem; user-select: all; -webkit-user-select: all; }
+.share .warn { color: var(--gold); font-size: .78rem; }
+.share .mbtns { flex-wrap: wrap; }

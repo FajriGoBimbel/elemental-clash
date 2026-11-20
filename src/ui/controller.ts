@@ -12,7 +12,7 @@ import { sound } from '../audio';
 export interface GuestOpts { p: [string, string]; a: string; pure: boolean; slot: number }
 /** Mode 2 Layar: perangkat ini merender pertarungan sendiri (disediakan main.ts). */
 interface GuestApi { start(o: GuestOpts, onPause: () => void): void; read(): Input; snap(s: unknown): void; end(): void }
-interface Ctx { portraits: Record<string, string>; athumbs: Record<string, string>; resume?: boolean; guest: GuestApi; exit: () => void }
+interface Ctx { portraits: Record<string, string>; athumbs: Record<string, string>; resume?: boolean; code?: string; guest: GuestApi; exit: () => void }
 let ctx: Ctx, link: ClientLink | null = null, code = '', scr: any = null, view = '', pad: Controls | null = null;
 let wake: { release(): Promise<void> } | null = null, sigT = 0, guestMid = -1;
 const pname = (i: number) => T('Pemain ', 'Player ') + (i + 1);
@@ -40,6 +40,7 @@ export async function controllerMode(c: Ctx) {
   view = ''; joinScreen();
   const sv = c.resume ? ctlSaved() : null;
   if (sv) { code = sv.code; link.resume(sv.code, sv.tok); }
+  else if (c.code) { code = c.code; link.join(code); } // dari link undangan
 }
 function leave(notify = true) {
   if (notify) link?.cmd('leave');
@@ -189,7 +190,9 @@ function inScreen() {
       break;
     }
     case 'wait':
-      show(`${top()}<div class="cwait"><span class="spin big"></span><h2>${s.w === 'arena' ? T('Pemain 1 memilih arena…', 'Player 1 is choosing the arena…') : T('Tunggu sebentar…', 'Please wait…')}</h2></div>`, 'dim ctlr', common);
+      show(s.w === 'solo'
+        ? `${top()}<div class="cwait"><h2>${T('Joystick siap!', 'Gamepad ready!')}</h2><p>${T('Pilih mode & karakter di layar utama. Joystick aktif saat pertarungan dimulai.', 'Pick a mode & fighter on the main screen. The gamepad turns on when the fight starts.')}</p><p class="mut">${T('Bisa dipakai di Pertandingan Cepat, Mode Cerita, dan Latihan.', 'Works in Quick Match, Story Mode and Training.')}</p></div>`
+        : `${top()}<div class="cwait"><span class="spin big"></span><h2>${s.w === 'arena' ? T('Pemain 1 memilih arena…', 'Player 1 is choosing the arena…') : T('Tunggu sebentar…', 'Please wait…')}</h2></div>`, 'dim ctlr', common);
       break;
     case 'fight':
       $('.over.cpause')?.remove();
@@ -198,7 +201,7 @@ function inScreen() {
     case 'pause': {
       play(s);
       $('.over.cpause')?.remove();
-      const me = s.by === s.slot, drop = s.drop >= 0;
+      const me = s.by === s.slot || !!s.solo, drop = s.drop >= 0; // solo: joystick selalu boleh melanjutkan
       const o = modal(`<h2>${T('Jeda', 'Paused')}</h2><p>${drop ? T(`${pname(s.drop)} terputus. Menunggu…`, `${pname(s.drop)} disconnected. Waiting…`) : s.by < 0 ? T('Dijeda dari layar host.', 'Paused from the host screen.') : me ? T('Kamu menjeda pertandingan.', 'You paused the match.') : T(`Dijeda oleh ${pname(s.by)}.`, `Paused by ${pname(s.by)}.`)}</p>
         <div class="mbtns">${me && !drop ? `<button class="btn pri" data-a="resume">${T('Lanjutkan', 'Resume')}</button>` : ''}<button class="btn hold" data-a="exit">${T('Keluar (tahan)', 'Leave (hold)')}<i></i></button></div>`, { resume: () => link!.cmd('resume'), exit: () => leave() });
       o.classList.add('cpause');

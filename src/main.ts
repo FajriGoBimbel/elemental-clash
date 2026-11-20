@@ -13,6 +13,7 @@ import { Mirror, snapshot } from './net/sync';
 import { getSock } from './net/transport';
 import { controllerMode, ctlSaved, GuestOpts } from './ui/controller';
 import { initScreen } from './ui/screen';
+import { joinLink, shareModal, takeJoinCode } from './ui/share';
 import { $, $$, bind, elVar, esc, etag, icon, modal, show, sigIcon, toast, ui } from './ui/dom';
 import { T, loadSave, persist, resetSave, save, today, tr } from './save';
 import { sound } from './audio';
@@ -57,7 +58,11 @@ async function splash() {
   const jobs: (() => void)[] = [...CHARS, BOSS].map(c => () => { portraits[c.id] = stage.thumbChar(c); });
   for (const a of ARENAS) jobs.push(() => { athumbs[a.id] = stage.thumbArena(a.id); });
   for (let i = 0; i < jobs.length; i++) { jobs[i](); $('.load i').style.width = (i + 1) / jobs.length * 100 + '%'; await new Promise(r => setTimeout(r, 0)); }
-  if (ctlSaved() && getSock()) return joinCtl(true); // halaman sempat dimuat ulang saat jadi kontroler: sambung lagi otomatis
+  const jc = takeJoinCode(), saved = ctlSaved();
+  if (getSock()) {
+    if (jc && saved?.code !== jc) return joinCtl(false, jc); // dibuka dari link undangan: langsung gabung dengan kodenya
+    if (saved) return joinCtl(true); // halaman sempat dimuat ulang saat jadi kontroler: sambung lagi otomatis
+  }
   if (params.has('skip')) return menu();
   $('#lt').outerHTML = `<div class="tap">${T('Ketuk untuk mulai', 'Tap to start')}</div>`; $('.load').remove();
   const root = ui.firstElementChild as HTMLElement;
@@ -73,7 +78,7 @@ function dailyGoal() {
 function menu() {
   endFight(); vsClose(); if (idle) setIdle(false); sound.music('menu');
   const c = charById(save.lastChar), d = dailyGoal(); stage.showChar(c, .5); stage.showSpin = .3;
-  show(`<header class="topbar"><div class="logo sm">Elemental<b>Clash</b></div>${coins()}</header>
+  show(`<header class="topbar"><div class="logo sm">Elemental<b>Clash</b></div><div class="row">${padBtn()}${coins()}</div></header>
     <nav class="mnav">
       <button class="btn pri" data-a="mode" data-v="quick" style="--el:#ffd166">${T('Pertandingan Cepat', 'Quick Match')}</button>
       <button class="btn" data-a="mode" data-v="story">${T('Mode Cerita', 'Story Mode')}<small>${T('Turnamen', 'Tournament')}</small></button>
@@ -87,7 +92,7 @@ function menu() {
       ${save.daily.done ? `<p class="done">${T('Selesai! Kembali lagi besok.', 'Done! Come back tomorrow.')}</p>` : `<p>${T(`Menangkan Pertandingan Cepat memakai <b>${d.char.name}</b> di <b>${tr(d.arena.name)}</b>.`, `Win a Quick Match as <b>${d.char.name}</b> in <b>${tr(d.arena.name)}</b>.`)} <span class="coins">+150</span></p>`}
     </aside>`, 'menu', {
     mode: v => { app.mode = v as Mode; select(save.lastChar); },
-    collection: () => collection(), settings: () => settings(), versus: () => vsMenu(),
+    collection: () => collection(), settings: () => settings(), versus: () => vsMenu(), pad: () => padModal(),
   });
 }
 
@@ -218,7 +223,7 @@ function startFight(oppId: string, arenaId: string, level: number, p1Id = app.ch
     ctls: [], ctlSlot: [], src: [], pauseBy: -1, pauseEl: null, dropSlot: -1,
   };
   F.src = V ? [0, 1].map(i => () => vsInput(F, i))
-    : [() => F.demo ? F.demo.update(STEP, m.f[0], m.f[1], m) : F.ctls[0]?.read() ?? noInput(), () => bot!.update(STEP, m.f[1], m.f[0], m)];
+    : [() => F.demo ? F.demo.update(STEP, m.f[0], m.f[1], m) : padInput(F.ctls[0]?.read() ?? noInput()), () => bot!.update(STEP, m.f[1], m.f[0], m)];
   view.vsT = 2.2; view.onEvent = onFightEvent; sound.music(arena.id);
   vsBanner(p1, p2);
 }
@@ -312,10 +317,15 @@ function pause(by = -1) {
   const o = modal(`<h2>${T('Jeda', 'Paused')}</h2><p class="mut">${c.name} · ${T('Daftar jurus', 'Move list')}</p>${movesHtml(c)}
     ${tr_ ? `<div class="srow"><span>${T('Perilaku lawan', 'Dummy behavior')}</span><div class="seg">${[['stand', T('Diam', 'Stand')], ['block', T('Tangkis', 'Block')], ['fight', T('Melawan', 'Fight')]].map(d => `<button data-a="dummy" data-v="${d[0]}" class="${app.dummy === d[0] ? 'on' : ''}">${d[1]}</button>`).join('')}</div></div>` : ''}
     <div class="mbtns"><button class="btn pri" data-a="resume">${T('Lanjutkan', 'Resume')}</button><button class="btn" data-a="restart">${T('Ulangi', 'Restart')}</button><button class="btn" data-a="quit">${T('Keluar', 'Quit')}</button></div>`, {
-    resume: () => { o.remove(); f.paused = false; },
+    resume: () => soloResume(),
     dummy: (v, el) => { app.dummy = v; f.bot.dummy = v === 'fight' ? null : v; $$('.seg button', o).forEach(b => b.classList.toggle('on', b === el)); },
     restart: () => startFight(f.oppId, f.arenaId, f.level), quit: () => menu(),
   });
+  f.pauseEl = o;
+}
+function soloResume() {
+  const f = fight; if (!f || !f.paused || app.mode === 'versus') return;
+  f.pauseEl?.remove(); f.pauseEl = null; f.paused = false; pad?.input[0].release();
 }
 
 // ---------- hasil ----------
@@ -418,13 +428,16 @@ const MP_COINS = 15, MP_DAILY = 10; // koin Main Bareng hanya untuk profil host,
 const pname = (i: number) => T('Pemain ', 'Player ') + (i + 1);
 const remote = (i: number) => !!vs?.room && vs.room.remote(i);
 const isLocal = (i: number) => fight?.guest ? i === fight.guest.slot : app.mode === 'versus' ? !remote(i) : i === 0;
-const buzz = (i: number, k: 'hit' | 'hurt' | 'ult') => { if (remote(i) && !vs!.bots[i]) vs!.room!.buzz(i, k); };
+const buzz = (i: number, k: 'hit' | 'hurt' | 'ult') => {
+  if (remote(i) && !vs!.bots[i]) vs!.room!.buzz(i, k);
+  else if (i === 0 && soloPad()) pad!.buzz(0, k);
+};
 const cfgName = (c: Cfg) => ({ A: T('Satu Layar', 'One Screen'), B: T('Layar + 1 Kontroler', 'Screen + 1 Controller'), C: T('Layar + 2 Kontroler', 'Screen + 2 Controllers'), D: T('2 Layar', 'Two Screens') })[c];
 
 // ---------- Main Bareng (host) ----------
 // ${card('A', T('Satu Layar', 'One Screen'), T('Berdua bermain sentuh di layar ini. Paling nyaman di tablet.', 'Both players use touch on this screen. Best on a tablet.'), T('1 perangkat', '1 device'), false)}
 function vsMenu() {
-  endFight(); vsClose(); sound.music('menu');
+  endFight(); vsClose(); padClose(); sound.music('menu');
   stage.showChar(charById(save.lastChar), 0); stage.clear(); // langit menu tetap, tanpa model agar kartu tidak tertutup
   const sock = getSock(), lan = !!sock;
   const card = (k: Cfg, t: string, d: string, n: string, need: boolean) => `<button class="vcard" data-a="cfg" data-v="${k}" ${need && !lan ? 'disabled' : ''}>
@@ -446,7 +459,7 @@ function vsMenu() {
     join: () => joinCtl(),
   });
 }
-function joinCtl(resume = false) { endFight(); setIdle(true); sound.music(null); controllerMode({ portraits, athumbs, resume, guest: guestApi, exit: () => { setIdle(false); vsMenu(); } }); }
+function joinCtl(resume = false, code = '') { padClose(); endFight(); setIdle(true); sound.music(null); controllerMode({ portraits, athumbs, resume, code, guest: guestApi, exit: () => { setIdle(false); vsMenu(); } }); }
 const SVG_PAD = '<svg viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="19" height="11" rx="5.5"/><path d="M7 10v4M5 12h4"/><circle cx="16" cy="10.6" r=".9" fill="currentColor"/><circle cx="18" cy="13.2" r=".9" fill="currentColor"/></svg>';
 
 /** Mode kontroler: tidak merender 3D sama sekali (hemat baterai di HP kontroler). */
@@ -487,12 +500,12 @@ function lobby() {
   show(`<div class="title"><h2>${T('Lobi', 'Lobby')}</h2><span class="mut">${T('Main Bareng', 'Versus')} · ${cfgName(v.cfg)}</span></div>
     <div class="lobby"><div class="panel codebox"><span class="mut">${T('Kode ruangan', 'Room code')}</span>
       <div class="code" aria-label="${[...r.code].join(' ')}">${[...r.code].map(c => `<b>${c}</b>`).join('')}</div>
-      <button class="btn sm" data-a="regen">${T('Buat ulang kode', 'New code')}</button>
+      <div class="row">${joinLink(r.code) ? `<button class="btn sm pri" data-a="share">${T('Bagikan link / QR', 'Share link / QR')}</button>` : ''}<button class="btn sm" data-a="regen">${T('Buat ulang kode', 'New code')}</button></div>
       <ol class="steps"><li>${D ? T('Di perangkat lain buka game ini → <b>Main Bareng → Gabung dengan Kode</b>', 'On the other device open this game → <b>Versus → Join with Code</b>') : T('Di HP lain buka <b>Main Bareng → Gabung dengan Kode</b>', 'On another phone open <b>Versus → Join with Code</b>')}</li><li>${T('Masukkan kode di atas', 'Enter the code above')}</li><li>${T('Izinkan permintaannya di layar ini', 'Approve the request on this screen')}</li></ol>
       <p class="mut">${getSock()?.kind === 'web' ? T('Buka game ini di HP (alamat yang sama) → Main Bareng → Gabung sebagai Kontroler', 'Open this game on the phone (same address) → Versus → Join as Controller') : T('Wi-Fi yang sama atau hotspot salah satu HP · tanpa internet', 'Same Wi-Fi or one phone\'s hotspot · no internet')}</p></div>
       <div class="slots">${slot(0)}${slot(1)}${all ? `<p class="go">${T('Semua pemain terhubung!', 'Everyone is connected!')}</p>` : ''}</div></div>
     <div class="foot"><button class="btn" data-a="back">${T('Tutup Ruangan', 'Close Room')}</button><button class="btn pri" data-a="ok" ${all ? '' : 'disabled'}>${T('Lanjut', 'Next')}</button></div>`, 'dim', {
-    regen: () => r.regen(), back: () => vsMenu(), ok: () => vsSelect(),
+    regen: () => r.regen(), back: () => vsMenu(), ok: () => vsSelect(), share: () => shareModal(r.code, D ? 'p2' : 'ctl'),
   });
   const q = r.reqs[0];
   if (q) modal(`<h2>${T('Permintaan bergabung', 'Join request')}</h2><p><b>${esc(q.name)}</b> ${D ? T('ingin bergabung sebagai Pemain 2.', 'wants to join as Player 2.') : T('ingin bergabung sebagai kontroler.', 'wants to join as a controller.')}</p>
@@ -670,6 +683,91 @@ function vsResAction(a: string) {
   else if (a === 'arena') { endFight(); v.phase = 'arena'; arenaScreen(); }
 }
 
+// ---------- joystick HP untuk mode solo ----------
+// Layar ini (desktop/TV/tablet) membuka ruangan 1 slot; HP bergabung lewat "Gabung dengan Kode" dan menjadi
+// joystick Pemain 1 di Pertandingan Cepat, Cerita, dan Latihan. Kontrol keyboard/sentuh di layar tetap aktif.
+let pad: HostRoom | null = null, padOpening: Promise<boolean> | null = null, padReqEl: HTMLElement | null = null, padMEl: HTMLElement | null = null;
+let padKey = '', padFbT = 0;
+const padUp = () => !!pad?.ready(0);
+const soloPad = () => padUp() && app.mode !== 'versus' && !!fight && !fight.guest;
+function padInput(a: Input): Input {
+  if (!padUp() || app.mode === 'versus') return a;
+  const b = pad!.input[0].read();
+  return { mx: Math.abs(a.mx) >= Math.abs(b.mx) ? a.mx : b.mx, up: a.up || b.up, down: a.down || b.down, atk: a.atk || b.atk, hvy: a.hvy || b.hvy, s1: a.s1 || b.s1, s2: a.s2 || b.s2, block: a.block || b.block, dash: a.dash || b.dash, ult: a.ult || b.ult };
+}
+function padOpen(): Promise<boolean> {
+  if (pad) return Promise.resolve(true);
+  return padOpening ??= (async () => {
+    const sock = getSock(); if (!sock) return false;
+    const r = new HostRoom(sock, [0], await sock.name());
+    try { await r.open(); } catch { return false; } finally { padOpening = null; }
+    pad = r; padKey = '';
+    r.onChange = padChange;
+    r.onJoin = () => { sound.confirm(); toast(T('Joystick HP tersambung', 'Phone gamepad connected')); padKey = ''; };
+    r.onBack = () => { toast(T('Joystick HP tersambung kembali', 'Phone gamepad reconnected')); padKey = ''; };
+    r.onDrop = () => { toast(T('Joystick HP terputus', 'Phone gamepad disconnected')); if (fight && !fight.guest && app.mode !== 'versus') pause(0); };
+    r.onCmd = (_slot, m) => {
+      if (m.a === 'leave') { r.kick(0); toast(T('Joystick HP dilepas', 'Phone gamepad left')); }
+      else if (app.mode !== 'versus' && fight && !fight.guest) { if (m.a === 'pause') pause(0); else if (m.a === 'resume') soloResume(); }
+    };
+    return true;
+  })();
+}
+function padClose() {
+  if (!pad) return; pad.close(); pad = null; padKey = '';
+  padReqEl?.remove(); padReqEl = null; padMEl?.remove(); padMEl = null; padChange();
+}
+const padBtn = () => getSock() ? `<button class="btn sm padb ${padUp() ? 'on' : pad ? 'wait' : ''}" data-a="pad" aria-label="${T('Joystick HP', 'Phone gamepad')}"><span class="dev pad">${SVG_PAD}</span>${padUp() ? T('Joystick HP aktif', 'Gamepad on') : T('Joystick HP', 'Phone gamepad')}</button>` : '';
+function padHtml() {
+  const r = pad!, p = r.peers[0];
+  const st = p ? `<div class="slot ${p.up ? 'ok' : 'bad'}"><b>${T('Joystick', 'Gamepad')}</b><span>${esc(p.name)} <span data-sig="p">${sigIcon(r.sig(0))}</span></span><i>${p.up ? T('Terhubung', 'Connected') : T('Terputus…', 'Reconnecting…')}</i></div>`
+    : `<div class="slot"><b>${T('Joystick', 'Gamepad')}</b><span class="mut">${T('Menunggu HP…', 'Waiting for a phone…')}</span><i>${T('Menunggu', 'Waiting')}</i></div>`;
+  return `<h2>${T('Pakai HP sebagai Joystick', 'Use a Phone as Gamepad')}</h2>
+    <p class="mut">${T('Untuk Pertandingan Cepat, Cerita, dan Latihan. Keyboard & sentuh di layar ini tetap bisa dipakai.', 'For Quick Match, Story and Training. Keyboard & touch on this screen still work.')}</p>
+    <div class="code" aria-label="${[...r.code].join(' ')}">${[...r.code].map(c => `<b>${c}</b>`).join('')}</div>
+    <ol class="steps"><li>${T('Di HP buka game ini → <b>Main Bareng → Gabung dengan Kode</b>', 'On the phone open this game → <b>Versus → Join with Code</b>')}</li><li>${T('Masukkan kode di atas, lalu izinkan di layar ini', 'Enter the code above, then approve it here')}</li></ol>
+    ${st}
+    <div class="mbtns"><button class="btn pri" data-a="ok">${T('Selesai', 'Done')}</button>${p ? `<button class="btn" data-a="off">${T('Putuskan', 'Disconnect')}</button>` : `${joinLink(r.code) ? `<button class="btn" data-a="share">${T('Bagikan link / QR', 'Share link / QR')}</button>` : ''}<button class="btn sm" data-a="regen">${T('Kode baru', 'New code')}</button>`}</div>`;
+}
+async function padModal() {
+  if (!getSock()) return;
+  if (!await padOpen()) { toast(getSock()?.kind === 'web' ? T('Gagal membuka joystick HP. Periksa koneksi internet.', 'Could not open the phone gamepad. Check the internet connection.') : T('Gagal membuka joystick HP. Pastikan Wi-Fi atau hotspot menyala.', 'Could not open the phone gamepad. Make sure Wi-Fi or hotspot is on.')); return; }
+  padMEl?.remove();
+  const o = padMEl = modal(padHtml(), {
+    ok: () => { o.remove(); padMEl = null; if (!pad?.peers[0]) padClose(); }, // tidak dipakai: lepas ruangannya
+    off: () => { pad?.kick(0); padClose(); },
+    regen: () => pad?.regen(),
+    share: () => pad && shareModal(pad.code, 'pad'),
+  }, 'padm');
+}
+function padChange() {
+  const r = pad;
+  if (padMEl?.isConnected && r) padMEl.firstElementChild!.innerHTML = padHtml();
+  const b = $('.menu [data-a="pad"]'); if (b) b.outerHTML = padBtn();
+  const q = r?.reqs[0];
+  if (!q) { padReqEl?.remove(); padReqEl = null; return; }
+  if (padReqEl?.isConnected) return;
+  const o = padReqEl = modal(`<h2>${T('Permintaan joystick', 'Gamepad request')}</h2><p><b>${esc(q.name)}</b> ${T('ingin menjadi joystick di layar ini.', 'wants to be the gamepad for this screen.')}</p>
+    <div class="mbtns"><button class="btn pri" data-a="yes">${T('Izinkan', 'Allow')}</button><button class="btn" data-a="no">${T('Tolak', 'Deny')}</button></div>`,
+    { yes: () => { o.remove(); padReqEl = null; r!.approve(q.conn, true); }, no: () => { o.remove(); padReqEl = null; r!.approve(q.conn, false); } });
+}
+/** Layar untuk HP joystick + umpan balik HP/energi; juga melepas HP yang putus > 15 dtk agar HP lain bisa masuk. */
+function padTick(t: number) {
+  const r = pad!, p = r.peers[0];
+  if (p && !p.up && performance.now() - p.dropAt > RECONNECT_WAIT) { r.kick(0); padChange(); }
+  if (r.reqs.length && !padReqEl?.isConnected) padChange(); // modal permintaan tertimpa pergantian layar: tampilkan lagi
+  if (!padUp()) return;
+  const f = fight, solo = !!f && !f.guest && app.mode !== 'versus' && f.m.phase !== 'over'; // sejak intro VS: pad langsung siap
+  const s = solo ? (f!.paused ? { s: 'pause', by: f!.pauseBy, drop: -1, solo: true } : { s: 'fight' }) : { s: 'wait', w: 'solo' };
+  const id = solo ? f!.m.f[0].def.id : '', key = s.s + id;
+  if (key !== padKey) { padKey = key; r.send(0, { t: 'scr', slot: 0, cfg: 'S', id, ...s }); }
+  if (solo && t - padFbT >= 66) {
+    padFbT = t; const x = f!.m.f[0];
+    r.fb(0, { hp: Math.round(Math.max(0, x.hp)), mh: x.def.hp, en: Math.round(x.energy), c1: +(x.cd1 / x.def.moves.s1.cd!).toFixed(2), c2: +(x.cd2 / x.def.moves.s2.cd!).toFixed(2), st: +x.stam.toFixed(2), w: f!.m.wins });
+  }
+  const sg = $('[data-sig="p"]'); if (sg) { const h = sigIcon(r.sig(0)); if (sg.innerHTML !== h) sg.innerHTML = h; }
+}
+
 // ---------- loop ----------
 let last = performance.now(), pending = 0, idle = false;
 function frame(now: number) {
@@ -691,6 +789,7 @@ function frame(now: number) {
     f.view.update(rdt, rdt);
   }
   if (f) vsFeedback(now);
+  if (pad) padTick(now);
   if (!idle) stage.render(f && f.paused ? 0 : rdt);
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) { pause(); sound.suspend(true); } else sound.suspend(false); });
