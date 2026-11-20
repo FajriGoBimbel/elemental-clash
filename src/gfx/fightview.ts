@@ -13,7 +13,7 @@ const V = new THREE.Vector3();
 
 class FighterView {
   model: CharModel; shadow: THREE.Mesh; target = P(); yaw: number; flashT = 0; walkPh = 0; lastX: number; lastHit = 0; alt = false;
-  aura: THREE.Mesh; auraOn = false;
+  aura: THREE.Mesh; auraOn = false; hitJ = 0; hitK = 0;
   private ctx: AnimCtx = { state: 'idle', u: 0, st: 0, t: 0, vy: 0, walkPh: 0, back: false, landed: false, alt: false };
   constructor(public f: Fighter, par: THREE.Group, alt = false) {
     this.model = new CharModel(f.def, f.elem, alt);
@@ -47,6 +47,12 @@ class FighterView {
     const fast = f.state === 'attack' || f.state === 'hit' || f.state === 'block' || f.state === 'dash';
     md.apply(this.target, rdt, fast ? 26 : 14, t);
     md.group.position.set(f.x, f.y, 0);
+    // kena pukul: badan bergetar selama hitstop lalu gepeng sesaat dan memantul kembali
+    if (this.hitJ > 0) {
+      this.hitJ = Math.max(0, this.hitJ - rdt); const p = this.hitJ / this.hitK;
+      md.group.position.x += rnd(-1, 1) * .07 * p; md.group.position.y += rnd(0, 1) * .03 * p;
+      const sq = Math.sin(p * Math.PI) * .09 * Math.min(1.6, this.hitK / .12); md.group.scale.set(1 + sq, 1 - sq, 1 + sq);
+    } else md.group.scale.set(1, 1, 1);
     const ty = f.state === 'win' ? f.face * .3 : f.face * (Math.PI / 2 - .42);
     this.yaw += (ty - this.yaw) * Math.min(1, rdt * 14); md.group.rotation.y = this.yaw;
     this.shadow.position.set(f.x, .02, 0); const s = Math.max(.35, 1 - Math.max(0, f.y) * .22) * f.def.look.bulk; this.shadow.scale.setScalar(s);
@@ -60,6 +66,8 @@ class FighterView {
     if (f.slow > 0 && Math.random() < .4) fx.one(f.x + rnd(-.4, .4), f.y + rnd(.1, .7), .2, 0, rnd(-.4, -.1), 0, .6, .12, 0x58d68a, 0, true);
     if (f.root > 0 && Math.random() < .6) fx.one(f.x + rnd(-.45, .45), f.y + rnd(0, .9), .25, 0, rnd(.2, .8), 0, .5, .13, Math.random() < .5 ? 0x7b4f2c : 0x2fc46c, 0, true);
     if (f.energy >= 100 && Math.random() < .5) fx.one(f.x + rnd(-.4, .4), f.y + rnd(0, .4), rnd(-.3, .3), 0, rnd(1.5, 3), 0, .5, .1, ELEMS[f.elem].acc);
+    // hold penutup: partikel elemen tertarik ke tubuh selama mengumpulkan tenaga
+    if (f.chargeT > 0) for (let k = 0; k < 2; k++) { const a = rnd(0, Math.PI * 2), r = rnd(.8, 1.3); fx.one(f.x + Math.cos(a) * r, cy + Math.sin(a) * r, .3, -Math.cos(a) * r * 3, -Math.sin(a) * r * 3, 0, .3, .1, ELEMS[f.elem].acc); }
     if (f.state === 'dash' && f.dashDir && Math.random() < .9) fx.one(f.x, cy + rnd(-.7, .5), 0, -f.dashDir * rnd(2, 5), 0, 0, .25, .14, ELEMS[f.elem].acc, 0, false, 2);
   }
 }
@@ -69,6 +77,7 @@ interface EntView { o?: THREE.Object3D; mark?: THREE.Mesh; upd?(e: Ent, dt: numb
 export class FightView {
   views: FighterView[]; av: ArenaView; group = new THREE.Group(); time = 0; shake = 0; vsT = 0;
   private ents = new Map<number, EntView>(); private cine: { f: Fighter; t: number } | null = null;
+  private punch = { x: 0, y: 0, t: 0 }; private cracks: { o: THREE.Group; t: number }[] = [];
   private camPos = new THREE.Vector3(0, 2.2, 13); private camLook = new THREE.Vector3(0, 1.35, 0);
   private base = { hemi: 1, sun: 1 }; private pillarOn: boolean[] = [];
   onEvent: (e: Ev) => void = () => { };
@@ -96,6 +105,16 @@ export class FightView {
       this.fx.rise(c, h * 1.2, life * rnd(.85, 1));
     }
     this.fx.burst(x, .4, .2, 22, 0x58d68a, 5, .8, .13, { g: 6, solid: true, spread: w / 3 });
+  }
+
+  /** Retakan lantai sesaat: garis-garis gelap memancar dari titik hantaman, memudar dalam ±0,8 dtk. */
+  private crack(x: number) {
+    const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: 0x1a1410, transparent: true, opacity: .7, depthWrite: false });
+    for (let i = 0; i < 7; i++) {
+      const len = rnd(.6, 1.5), m = new THREE.Mesh(new THREE.PlaneGeometry(len, rnd(.04, .08)), mat.clone()), a = (i / 7) * Math.PI * 2 + rnd(-.3, .3);
+      m.rotation.x = -Math.PI / 2; m.rotation.z = a; m.position.set(Math.cos(a) * len / 2, .025, -Math.sin(a) * len / 2); g.add(m);
+    }
+    g.position.x = x; this.group.add(g); this.cracks.push({ o: g, t: .8 });
   }
 
   private makeEnt(e: Ent): EntView {
@@ -157,8 +176,10 @@ export class FightView {
       case 'entEnd': this.ents.get(e.e.id)?.end?.(e.e); break;
       case 'hit': {
         fx.hit(e.elem, e.x, e.y, e.strong, e.kind === 'block');
-        if (e.kind !== 'block') this.views[e.def.idx].flashT = .07;
-        this.shake = Math.max(this.shake, e.kind === 'block' ? .04 : e.strong ? .3 : .12);
+        if (e.kind !== 'block') { const v = this.views[e.def.idx]; v.flashT = .07; v.hitK = v.hitJ = e.fin ? .28 : e.strong ? .17 : .12; }
+        // getaran naik tiap pukulan kombo; penutup: getaran besar, kamera menyentak ke titik kena, kilat putih besar
+        this.shake = Math.max(this.shake, e.kind === 'block' ? .04 : e.fin ? .55 : (e.strong ? .3 : .12) * (1 + Math.min(5, (e.n || 1) - 1) * .15));
+        if (e.fin) { this.punch = { x: e.x, y: e.y, t: .32 }; fx.flash(e.x, e.y, .4, 0xffffff, 2.6, .16); fx.ring(e.x, e.y, .3, e.elem ? ELEMS[e.elem as Elem].acc : 0xffffff, .3, 2.4, .3, false); }
         if (e.kind === 'break') { fx.ring(e.x, e.y, .3, 0xff4a4a, .3, 2, .35, false); fx.burst(e.x, e.y, .3, 24, 0xffd0d0, 9, .35, .13); }
         if (e.fx?.shock && e.kind === 'hit') fx.bolt(e.def.x, e.def.y + 2.4, e.def.y, .3, ELEMS.petir.acc, .3, .05);
         break;
@@ -174,11 +195,19 @@ export class FightView {
         break;
       }
       case 'ko': fx.flash(e.f.x, e.f.y + 1.1, .3, 0xffffff, 3, .3); this.shake = .7; break;
-      case 'land': fx.burst(e.f.x, .08, .2, e.heavy ? 14 : 6, 0xd8d0c0, e.heavy ? 3 : 1.6, .5, .22, { flat: true, solid: true }); if (e.heavy) this.shake = Math.max(this.shake, .15); break;
+      case 'land':
+        fx.burst(e.f.x, .08, .2, e.heavy ? 14 : 6, 0xd8d0c0, e.heavy ? 3 : 1.6, .5, .22, { flat: true, solid: true }); if (e.heavy) this.shake = Math.max(this.shake, .15);
+        if (e.slam) { // dibanting: gelombang debu, puing, retakan di lantai
+          fx.ring(e.f.x, .06, 0, 0xe8dcc4, .4, 3.4, .45); fx.ring(e.f.x, .06, 0, 0xffffff, .2, 2, .3);
+          fx.burst(e.f.x, .2, .2, 26, 0x8a7a64, 7, .8, .16, { g: 18, solid: true, up: 6 }); fx.burst(e.f.x, .15, .2, 18, 0xd8d0c0, 4, .9, .32, { flat: true, solid: true });
+          this.crack(e.f.x); this.shake = Math.max(this.shake, .6);
+        }
+        break;
       case 'jump': fx.burst(e.f.x, .08, .2, 5, 0xd8d0c0, 1.6, .4, .18, { flat: true, solid: true }); break;
       case 'heal': for (let i = 0; i < 26; i++) fx.one(e.f.x + rnd(-.6, .6), e.f.y + rnd(0, 1.6), .3, 0, rnd(1, 2.6), 0, .9, .14, i % 2 ? 0x8affc8 : 0xeaffff); break;
       case 'dot': fx.burst(e.f.x, e.f.y + 1.2, .3, 6, 0xff7a1f, 2, .3, .16, { up: 1.5 }); break;
       case 'soft': fx.burst(e.f.x, .3, .3, 12, 0x58d68a, 3, .6, .12, { solid: true }); break;
+      case 'charged': fx.flash(e.f.x, e.f.y + 1.1, .3, ELEMS[e.f.elem as Elem].acc, 1.4, .25); fx.ring(e.f.x, e.f.y + 1.1, .2, ELEMS[e.f.elem as Elem].col, .3, 1.6, .3, false); break;
       case 'pushed': fx.burst(e.f.x, .6, .3, 22, 0xeaffff, 6, .5, .15, { g: 10 }); break;
       case 'pillarHit': fx.burst(e.p.x, 1.4, -.5, 8, 0xd9c39c, 4, .6, .12, { g: 14, solid: true }); break;
       case 'pillarBreak': fx.burst(e.p.x, 1.3, -.6, 40, 0xcdb48f, 7, .9, .2, { g: 16, solid: true, spread: .6 }); this.shake = Math.max(this.shake, .3); break;
@@ -205,6 +234,10 @@ export class FightView {
     const t = snap ? 1 : 1 - Math.exp(-k * rdt);
     this.camPos.lerp(pos, t); this.camLook.lerp(look, t);
     cam.position.copy(this.camPos); cam.lookAt(this.camLook);
+    if (this.punch.t > 0) { // sentakan kamera mendekati titik kena penutup, lalu kembali
+      this.punch.t = Math.max(0, this.punch.t - rdt); const p = Math.sin((this.punch.t / .32) * Math.PI) * .22;
+      V.set(this.punch.x, this.punch.y, 0).sub(cam.position); cam.position.addScaledVector(V, p); cam.lookAt(this.camLook.x + (this.punch.x - this.camLook.x) * p, this.camLook.y, 0);
+    }
     if (this.shake > .005) { cam.position.x += rnd(-1, 1) * this.shake * .35; cam.position.y += rnd(-1, 1) * this.shake * .35; }
   }
 
@@ -215,6 +248,8 @@ export class FightView {
     for (const e of m.events) this.handle(e);
     m.events.length = 0;
     for (const v of this.views) v.update(m, rdt, this.time, st.fx);
+    for (const c of this.cracks) { c.t -= rdt; c.o.children.forEach(o => ((o as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = Math.min(.7, c.t * .9)); if (c.t <= 0) { this.group.remove(c.o); c.o.traverse(o => { const k = o as THREE.Mesh; k.geometry?.dispose(); (k.material as THREE.Material | undefined)?.dispose(); }); } }
+    this.cracks = this.cracks.filter(c => c.t > 0);
     const live = new Set(m.ents.map(e => e.id));
     for (const [id, v] of this.ents) {
       const e = m.ents.find(x => x.id === id);

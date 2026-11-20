@@ -51,12 +51,14 @@ class Sound {
   coin() { this.tone(1320, .08, 'square', .08); this.tone(1760, .2, 'square', .08, undefined, undefined, .07); }
   whoosh(k = 1) { this.noise(.14, .12 * k, 900, 'bandpass', 2600, .8); }
   jump() { this.tone(260, .1, 'sine', .08, 520); }
-  land() { this.noise(.08, .14, 300); }
+  land(slam = false) { this.noise(.08, .14, 300); if (slam) { this.tone(60, .4, 'sine', .7, 28); this.noise(.25, .4, 700, 'lowpass', 90); } }
   dash() { this.noise(.16, .16, 2200, 'bandpass', 600, 1.2); }
   block() { this.tone(240, .07, 'square', .12, 160); this.noise(.06, .2, 2400, 'highpass'); }
-  hit(strong: boolean, e: Elem | null) {
-    const v = strong ? 1.35 : 1;
-    this.tone(strong ? 150 : 190, strong ? .2 : .12, 'sine', .5 * v, 48); this.noise(strong ? .14 : .08, .4 * v, strong ? 1800 : 2600, 'lowpass', 400);
+  hit(strong: boolean, e: Elem | null, step = 1, fin = false) {
+    const v = strong ? 1.35 : 1, up = 1 + Math.min(5, step - 1) * .07; // kombo makin panjang = nada makin tinggi
+    this.tone((strong ? 150 : 190) * up, strong ? .2 : .12, 'sine', .5 * v, 48);
+    if (step > 1) this.tone(520 + Math.min(6, step) * 90, .07, 'triangle', .07);
+    if (fin) { this.tone(72, .45, 'sine', .7, 30); this.noise(.3, .35, 900, 'lowpass', 120); } this.noise(strong ? .14 : .08, .4 * v, strong ? 1800 : 2600, 'lowpass', 400);
     this.elem(e, .5 * v);
   }
   elem(e: Elem | null, v = 1) {

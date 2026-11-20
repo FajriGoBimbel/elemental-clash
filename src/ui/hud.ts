@@ -17,11 +17,11 @@ export class Hud {
     el.innerHTML = `<div class="hud-top">${side(m.f[0], 'p1')}
       <div class="mid"><div class="timer">60</div><div class="pips"><span class="w0"><b></b><b></b></span><span class="w1"><b></b><b></b></span></div><div class="rnd"></div></div>
       ${side(m.f[1], 'p2')}</div>
-      <div class="msg"></div><div class="notice"></div><div class="combo l"></div><div class="combo r"></div><div class="ultban"></div><div class="pops"></div>
+      <div class="msg"></div><div class="notice"></div><div class="combo l"></div><div class="combo r"></div><div class="ultban"></div><div class="pops"></div><div class="impact"></div>
       <button class="pause" aria-label="${T('Jeda', 'Pause')}">II</button>
       ${matchMedia('(hover: hover) and (pointer: fine)').matches ? `<div class="keys"><b>A/D</b> ${T('gerak', 'move')} · <b>W</b> ${T('lompat', 'jump')} · <b>S</b> ${T('tunduk', 'crouch')} · <b>J</b> ${T('ringan', 'light')} · <b>K</b> ${T('berat', 'heavy')} · <b>L</b> ${T('spesial', 'special')} · <b>I</b> ${T('pamungkas', 'ultimate')} · <b>Space</b> ${T('tangkis', 'block')} · <b>Shift/O</b> dash</div>` : ''}`;
     parent.appendChild(el);
-    for (const k of ['timer', 'rnd', 'msg', 'notice', 'ultban', 'pops', 'pause']) this.q[k] = $('.' + k, el);
+    for (const k of ['timer', 'rnd', 'msg', 'notice', 'ultban', 'pops', 'pause', 'impact']) this.q[k] = $('.' + k, el);
     if (m.training) { this.q.timer.textContent = '∞'; $('.pips', el).style.display = 'none'; this.q.rnd.textContent = T('Latihan', 'Training'); }
   }
   get pauseBtn() { return this.q.pause; }
@@ -60,10 +60,15 @@ export class Hud {
     d.innerHTML = adv > 0 ? `▲<small>${T('UNGGUL', 'STRONG')}</small>` : `▼<small>${T('LEMAH', 'WEAK')}</small>`;
     this.q.pops.appendChild(d); setTimeout(() => d.remove(), 820);
   }
-  combo(attIdx: number, n: number) {
-    if (n < 2) return; const c = $(attIdx ? '.combo.r' : '.combo.l', this.el);
-    c.innerHTML = `${n}<small>HIT</small>`; c.classList.remove('show'); void c.offsetWidth; c.classList.add('show'); this.comboT[attIdx] = 1.2;
+  /** Penghitung kombo: warnanya naik tiap tingkat (2/4/6/8+ hit), label muncul di penutup. */
+  combo(attIdx: number, n: number, tag = '') {
+    if (n < 2 && !tag) return; const c = $(attIdx ? '.combo.r' : '.combo.l', this.el);
+    c.innerHTML = `${n >= 2 ? `${n}<small>HIT</small>` : ''}${tag ? `<em>${tag}</em>` : ''}`;
+    c.dataset.t = String(Math.min(4, Math.floor(n / 2)));
+    c.classList.remove('show'); void c.offsetWidth; c.classList.add('show'); this.comboT[attIdx] = tag ? 1.6 : 1.2;
   }
+  /** Kilat putih sekejap (impact frame) untuk pukulan penutup. */
+  impact() { const d = this.q.impact; d.classList.remove('show'); void d.offsetWidth; d.classList.add('show'); }
   ult(f: Fighter) {
     const b = this.q.ultban; b.textContent = tr(f.def.moves.ult.name!); b.style.setProperty('--el', hex(ELEMS[f.elem].col)); b.classList.toggle('r', f.idx === 1);
     b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');

@@ -31,6 +31,8 @@ export interface Move {
   /** kombo: gerakan berikutnya bila tombol Light (atk) / Heavy (hvy) ditekan; `heavy` = lanjutannya menunggu separuh recovery */
   branch?: { atk?: string; hvy?: string }; heavy?: boolean;
   ai?: [number, number];
+  /** penutup kombo: [gerakan versi hold, tombol yang ditahan]; `crush` = menembus tangkisan */
+  hold?: [string, 'atk' | 'hvy']; crush?: boolean;
 }
 export interface Look {
   h: number; bulk: number; sh: number; skin: number; c1: number; c2: number; hair: number;
@@ -49,7 +51,7 @@ export interface CharDef {
  *  `hv` = ciri elemen untuk semua tendangan berat, `fin` = tambahan khusus kick penutup H-H-H. */
 const basic = (reach: number, pw = 1, hv: Partial<Move> = {}, fin: Partial<Move> = {}): Record<string, Move> => {
   const el: Partial<Move> = { fx: hv.fx }; // ciri elemen untuk gerakan Heavy di kombo campuran
-  return {
+  const mv: Record<string, Move> = {
   a1: { id: 'a1', anim: 'jab', su: .10, ac: .08, re: .20, dmg: 38 * pw, box: [.1, reach, .8, 1.6], kb: [3, 0], stun: .32, lunge: 2.5, branch: { atk: 'a2', hvy: 'a2h' } },
   a2: { id: 'a2', anim: 'cross', su: .11, ac: .08, re: .24, dmg: 46 * pw, box: [.1, reach + .1, .8, 1.6], kb: [3.5, 0], stun: .36, lunge: 3, branch: { atk: 'a3', hvy: 'a3h' } },
   a3: { id: 'a3', anim: 'hook', su: .17, ac: .10, re: .36, dmg: 72 * pw, box: [.1, reach + .35, .8, 1.7], kb: [9, 6], stun: .4, launch: true, strong: true, lunge: 3 },
@@ -59,22 +61,30 @@ const basic = (reach: number, pw = 1, hv: Partial<Move> = {}, fin: Partial<Move>
   air2: { id: 'air2', anim: 'airkick', su: .06, ac: .10, re: .14, dmg: 46 * pw, box: [0, reach + .2, -.4, 1.0], kb: [1, 5], stun: .4, air: true, branch: { atk: 'air3', hvy: 'hvAir' } },
   air3: { id: 'air3', anim: 'axekick', su: .12, ac: .10, re: .18, dmg: 64 * pw, box: [0, reach + .1, -.8, 1.2], kb: [3, -16], stun: .4, launch: true, strong: true, air: true },
   low: { id: 'low', anim: 'sweep', su: .14, ac: .10, re: .32, dmg: 50 * pw, box: [.1, reach + .4, 0, .6], kb: [4, 5], stun: .3, launch: true, otg: true, lunge: 2 },
-  // kombo berat sengaja lebih lambat dari ringan (ancang-ancang 0,22 / 0,22 / 0,32 dtk, lanjutannya baru bisa setelah separuh recovery);
+  // kombo berat sengaja lebih lambat dari ringan (ancang-ancang 0,17 / 0,18 / 0,26 dtk, lanjutannya baru bisa setelah separuh recovery);
   // stun 0,75 dtk tetap menjamin kombo tersambung bila kena
-  hv: { id: 'hv', anim: 'teep', su: .22, ac: .10, re: .45, dmg: 66 * pw, box: [.1, reach + .45, .6, 1.4], kb: [3, 0], stun: .75, strong: true, heavy: true, branch: { hvy: 'hv2', atk: 'hl' }, ...hv },
-  hv2: { id: 'hv2', anim: 'roundhouse', su: .22, ac: .12, re: .48, dmg: 80 * pw, box: [.1, reach + .5, .8, 1.9], kb: [3, 0], stun: .75, strong: true, heavy: true, lunge: 2, branch: { hvy: 'hv3', atk: 'hhl' }, ...hv },
-  hv3: { id: 'hv3', anim: 'kick', su: .32, ac: .10, re: .5, dmg: 100 * pw, box: [.1, reach + .35, .6, 1.7], kb: [10, 7], stun: .5, launch: true, strong: true, lunge: 2.5, ...hv, ...fin },
+  hv: { id: 'hv', anim: 'teep', su: .17, ac: .10, re: .45, dmg: 66 * pw, box: [.1, reach + .45, .6, 1.4], kb: [3, 0], stun: .75, strong: true, heavy: true, armor: true, branch: { hvy: 'hv2', atk: 'hl' }, ...hv }, // armor: tahan Light saat ancang-ancang
+  hv2: { id: 'hv2', anim: 'roundhouse', su: .18, ac: .12, re: .48, dmg: 80 * pw, box: [.1, reach + .5, .8, 1.9], kb: [3, 0], stun: .75, strong: true, heavy: true, lunge: 2, branch: { hvy: 'hv3', atk: 'hhl' }, ...hv },
+  hv3: { id: 'hv3', anim: 'kick', su: .26, ac: .10, re: .5, dmg: 100 * pw, box: [.1, reach + .35, .6, 1.7], kb: [10, 7], stun: .5, launch: true, strong: true, heavy: true, lunge: 2.5, ...hv, ...fin },
   // varian berat di udara dan sambil menunduk ikut membawa efek elemen serangan berat karakter
-  hvAir: { id: 'hvAir', anim: 'airkick', su: .16, ac: .30, re: .10, dmg: 78 * pw, box: [0, reach + .3, -.6, 1.1], kb: [8, 4], stun: .45, launch: true, strong: true, air: true, fx: hv.fx },
-  hvLow: { id: 'hvLow', anim: 'uppercut', su: .2, ac: .14, re: .48, dmg: 84 * pw, box: [0, reach + .1, .3, 2.6], kb: [4, 10], stun: .45, launch: true, otg: true, strong: true, lunge: 1.5, fx: hv.fx },
+  hvAir: { id: 'hvAir', anim: 'airkick', su: .16, ac: .30, re: .10, dmg: 78 * pw, box: [0, reach + .3, -.6, 1.1], kb: [8, 4], stun: .45, launch: true, strong: true, heavy: true, air: true, fx: hv.fx },
+  hvLow: { id: 'hvLow', anim: 'uppercut', su: .17, ac: .14, re: .48, dmg: 84 * pw, box: [0, reach + .1, .3, 2.6], kb: [4, 10], stun: .45, launch: true, otg: true, strong: true, heavy: true, lunge: 1.5, fx: hv.fx },
   // kombo campuran: Heavy di dalam rantai Light memakai ancang-ancang cepat (±0,16 dtk) agar pasti tersambung
-  a3h: { id: 'a3h', anim: 'uppercut', su: .16, ac: .10, re: .45, dmg: 80 * pw, box: [.1, reach + .35, .6, 2.3], kb: [3, 11], stun: .45, launch: true, strong: true, lunge: 2.5, ...el },
+  a3h: { id: 'a3h', anim: 'uppercut', su: .16, ac: .10, re: .45, dmg: 80 * pw, box: [.1, reach + .35, .6, 2.3], kb: [3, 11], stun: .45, launch: true, strong: true, heavy: true, lunge: 2.5, ...el },
   a2h: { id: 'a2h', anim: 'roundhouse', su: .16, ac: .12, re: .44, dmg: 70 * pw, box: [.1, reach + .5, .8, 1.9], kb: [3, 0], stun: .75, strong: true, heavy: true, lunge: 2, branch: { hvy: 'a3hh' }, ...el },
-  a3hh: { id: 'a3hh', anim: 'spinkick', su: .2, ac: .12, re: .5, dmg: 95 * pw, box: [.1, reach + .55, .7, 1.6], kb: [12, 6], stun: .5, launch: true, strong: true, ...el },
+  a3hh: { id: 'a3hh', anim: 'spinkick', su: .2, ac: .12, re: .5, dmg: 95 * pw, box: [.1, reach + .55, .7, 1.6], kb: [12, 6], stun: .5, launch: true, strong: true, heavy: true, ...el },
   // Light di dalam rantai Heavy: cepat; superman punch melompat maju menutup jarak setelah teep
   hl: { id: 'hl', anim: 'superman', su: .14, ac: .10, re: .3, dmg: 52 * pw, box: [.1, reach + .2, .9, 1.7], kb: [2, 0], stun: .42, lunge: 9, branch: { atk: 'a3' } },
   hhl: { id: 'hhl', anim: 'elbow', su: .12, ac: .10, re: .38, dmg: 75 * pw, box: [.1, reach + .2, .9, 1.8], kb: [8, 6], stun: .4, lunge: 5, launch: true, strong: true },
   };
+  // hold di penutup kombo: tahan Light = rentetan pukulan yang menahan lawan; tahan Heavy = pukulan charged yang menembus tangkisan
+  for (const [id, key] of [['a3', 'atk'], ['hhl', 'atk'], ['a3h', 'hvy'], ['a3hh', 'hvy'], ['hv3', 'hvy']] as const) {
+    const f = mv[id]; f.hold = [id + 'C', key];
+    mv[id + 'C'] = key === 'atk'
+      ? { ...f, id: id + 'C', hold: undefined, ac: f.ac + .2, multi: .09, dmg: f.dmg * .4, kb: [1.5, 0], launch: false, stun: .5, lunge: (f.lunge || 0) * .6 }
+      : { ...f, id: id + 'C', hold: undefined, dmg: f.dmg * 1.5, kb: [f.kb![0] * 1.4, Math.max(f.kb![1], 8)], launch: true, strong: true, crush: true };
+  }
+  return mv;
 };
 
 export const CHARS: CharDef[] = [
@@ -117,7 +127,7 @@ export const CHARS: CharDef[] = [
     hp: 880, spd: 5.4, atk: .92, def: .9, jump: 12.5, tempo: .85, stats: [2, 5, 2, 4],
     look: { h: .96, bulk: .85, sh: .9, skin: 0xf0cfb0, c1: 0x2f9f84, c2: 0xf4fbf9, hair: 0xe9f3f0, style: 'swoosh' },
     moves: {
-      ...basic(1.25, 1, { name: ['Tendangan Topan', 'Gale Kicks'], su: .19, re: .38 }, { kb: [15, 6] }),
+      ...basic(1.25, 1, { name: ['Tendangan Topan', 'Gale Kicks'], su: .15, re: .38 }, { kb: [15, 6] }),
       s1: { id: 's1', name: ['Hembusan', 'Gale'], desc: ['Angin kencang yang mendorong lawan jauh.', 'A gust that shoves the foe far away.'], anim: 'cast', su: .16, ac: .1, re: .25, dmg: 0, spawn: 'gust', cd: 3, ai: [2, 9] },
       ult: { id: 'ult', name: ['Siklon', 'Cyclone'], desc: ['Pusaran menarik lawan lalu melemparnya.', 'A vortex pulls the foe in, then flings them.'], anim: 'spin', su: .35, ac: .3, re: .5, dmg: 0, spawn: 'cyclone', ult: true, inv: true, ai: [0, 6] },
     },
@@ -179,12 +189,15 @@ export interface BotLevel {
   id: string; name: L; goal: L; react: [number, number]; think: [number, number];
   aggr: number; block: number; dodge: number; punish: number; combo: number; skill: number; ult: number;
   elem: boolean; arena: boolean; read: boolean;
+  /** hardcore: kombo selalu penuh, dash-cancel untuk menekan terus, kebal & gerakan tipuan. Damage/HP tetap sama. */
+  hard?: boolean;
 }
 export const BOT_LEVELS: BotLevel[] = [
   { id: 'pemula', name: ['Pemula', 'Beginner'], goal: ['Belajar kontrol', 'Learn the controls'], react: [.6, .8], think: [.55, 1.0], aggr: .32, block: .06, dodge: 0, punish: 0, combo: 1, skill: .08, ult: .1, elem: false, arena: false, read: false },
   { id: 'normal', name: ['Normal', 'Normal'], goal: ['Pemain kasual', 'Casual players'], react: [.35, .5], think: [.35, .65], aggr: .5, block: .28, dodge: .04, punish: .2, combo: 2, skill: .3, ult: 1, elem: false, arena: false, read: false },
   { id: 'mahir', name: ['Mahir', 'Expert'], goal: ['Pemain menengah', 'Intermediate players'], react: [.2, .3], think: [.22, .45], aggr: .62, block: .52, dodge: .22, punish: .65, combo: 3, skill: .5, ult: 1, elem: true, arena: true, read: false },
   { id: 'master', name: ['Master', 'Master'], goal: ['Tantangan akhir', 'The final challenge'], react: [.12, .18], think: [.15, .32], aggr: .66, block: .78, dodge: .4, punish: .9, combo: 3, skill: .6, ult: 1, elem: true, arena: true, read: true },
+  { id: 'hardcore', name: ['Hardcore', 'Hardcore'], goal: ['Kombo tanpa henti', 'Relentless combos'], react: [.08, .12], think: [.08, .2], aggr: .8, block: .8, dodge: .55, punish: .95, combo: 3, skill: .65, ult: 1, elem: true, arena: true, read: true, hard: true },
 ];
 
 export interface Stage { opp: string | 'rival'; arena: string; level: number; text: L }

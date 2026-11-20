@@ -101,7 +101,7 @@ svg.ic { width: 1.1em; height: 1.1em; vertical-align: -.18em; fill: currentColor
 .vscol h3 { font-size: 1.05rem; }
 .thumbs.sm .th { width: 3.5rem; height: 3.5rem; }
 .vs { font-family: var(--disp); font-size: 2.4rem; font-weight: 700; font-style: italic; color: var(--gold); }
-.levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: .55rem; }
+.levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: .55rem; }
 .lv { text-align: left; padding: .4rem .7rem; border-radius: .35rem; background: rgba(255, 255, 255, .06); border: 1px solid var(--line); }
 .lv.sel { border-color: var(--gold); background: rgba(255, 209, 102, .14); }
 .lv b { font-family: var(--disp); display: block; text-transform: uppercase; letter-spacing: .05em; }
@@ -206,6 +206,13 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .combo.l { left: 1.2rem; } .combo.r { right: 1.2rem; }
 .combo.show { opacity: 1; animation: pop .18s; }
 .combo small { font-size: .5em; margin-left: .2em; }
+.combo.show { animation: cpop .22s cubic-bezier(.2, 1.6, .4, 1); }
+@keyframes cpop { from { transform: scale(1.9); opacity: 0; } }
+.combo[data-t="2"] { color: #ffb347; } .combo[data-t="3"] { color: #ff7a3a; } .combo[data-t="4"] { color: #ff4a4a; font-size: 2.3rem; }
+.combo em { display: block; font-size: .62em; color: #fff; letter-spacing: .06em; text-shadow: 0 0 .6rem var(--gold), 0 2px 6px #000; }
+.impact { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; mix-blend-mode: screen; }
+.impact.show { animation: impact .14s ease-out; }
+@keyframes impact { from { opacity: .55; } to { opacity: 0; } }
 .pop { position: absolute; font-family: var(--disp); font-weight: 700; font-size: 1.5rem; transform: translate(-50%, -50%); animation: rise .8s ease-out both; text-shadow: 0 2px 6px #000; display: flex; align-items: center; gap: .15rem; white-space: nowrap; }
 .pop.up { color: var(--good); font-size: 2.1rem; } .pop.dn { color: var(--bad); }
 .pop small { font-size: .45em; letter-spacing: .08em; }

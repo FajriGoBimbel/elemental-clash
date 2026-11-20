@@ -37,8 +37,8 @@ export class Controls {
     parent.appendChild(el); this.applySettings();
     el.querySelectorAll<HTMLElement>('.cb').forEach(b => {
       const k = b.dataset.k!; this.btn[k] = b;
-      b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('on'); if (k === 'block') this.held.block = true; else this.edge[k] = true; });
-      const up = () => { b.classList.remove('on'); if (k === 'block') this.held.block = false; };
+      b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('on'); if (k !== 'block') this.edge[k] = true; this.held[k] = true; });
+      const up = () => { b.classList.remove('on'); this.held[k] = false; };
       b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
     });
     const zone = el.querySelector<HTMLElement>('.stick-zone')!, base = el.querySelector<HTMLElement>('.stick-base')!, knob = el.querySelector<HTMLElement>('.stick-knob')!;
@@ -76,7 +76,7 @@ export class Controls {
     const i = noInput(); if (!this.enabled) { this.edge = {}; return i; }
     const h = this.held;
     i.mx = (h.r ? 1 : 0) - (h.l ? 1 : 0) || (Math.abs(this.sx) > .28 ? Math.sign(this.sx) * Math.min(1, Math.abs(this.sx) * 1.5) : 0);
-    i.up = !!h.u || this.sy < -.6; i.down = !!h.d || this.sy > .6; i.block = !!h.block;
+    i.up = !!h.u || this.sy < -.6; i.down = !!h.d || this.sy > .6; i.block = !!h.block; i.atkHold = !!h.atk; i.hvyHold = !!h.hvy;
     for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as Edge[]) { i[k] = !!this.edge[k]; this.edge[k] = false; }
     return i;
   }
