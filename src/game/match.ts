@@ -5,7 +5,7 @@ export const W = 9;          // setengah lebar arena (dinding)
 export const RING = 7.6;     // tepi platform Puncak Awan
 export const ROUND_TIME = 60;
 
-export interface HitSpec { dmg: number; kb?: [number, number]; stun?: number; launch?: boolean; strong?: boolean; fx?: StatusFx; ult?: boolean; soft?: boolean; otg?: boolean }
+export interface HitSpec { dmg: number; kb?: [number, number]; stun?: number; launch?: boolean; strong?: boolean; fx?: StatusFx; ult?: boolean; soft?: boolean; otg?: boolean; heavy?: boolean; crush?: boolean }
 export interface Ent extends HitSpec {
   id: number; kind: 'proj' | 'zone'; vis: string; owner: Fighter | null; elem: Elem | null;
   x: number; y: number; vx: number; vy: number; g?: number; w: number; h: number; // zone: y..y+h ; proj: pusat y, tinggi h
@@ -170,9 +170,9 @@ export class Match {
     const kb = s.kb || [3, 0];
     let dmg = s.dmg * mul, kind = 'hit';
     if (blocking) {
-      const cost = s.ult ? 2 : 1;
+      const cost = s.ult || s.heavy ? 2 : 1; // Heavy menembus tangkisan: kuras 2 stamina
       def.stamWait = 1;
-      if (def.stam < cost) {
+      if (def.stam < cost || s.crush) { // stamina habis atau pukulan charged: tangkisan jebol
         def.stam = 0; dmg *= .35; kind = 'break'; def.setHit(1.0, dir * 3, 0, false);
       } else {
         def.stam -= cost; dmg *= .15; kind = 'block'; def.lock = .2; def.push = dir * (4 + kb[0] * .3); def.comboN = 0;
@@ -190,8 +190,11 @@ export class Match {
     def.hp = Math.max(this.training ? 1 : 0, def.hp - dmg); this.lastHurt[def.idx] = this.clock;
     if (att && !s.ult) att.energy = Math.min(100, att.energy + dmg * (kind === 'block' ? .05 : .075));
     def.energy = Math.min(100, def.energy + dmg * .05);
-    this.hitstop = Math.max(this.hitstop, kind === 'block' ? .03 : s.ult ? .1 : s.strong ? .085 : .045);
-    this.ev({ t: 'hit', kind, x: def.x - dir * .25, y: def.y + (def.state === 'crouch' ? .7 : 1.15), dir, strong: !!s.strong || !!s.ult, adv: kind === 'block' ? 0 : adv, elem: att ? att.elem : null, att, def, dmg, fx: s.fx });
+    // penutup kombo (pukulan ke-3, Heavy charged, tendangan kapak): hitstop panjang + slow-mo singkat; selain itu hitstop naik tiap pukulan kombo
+    const mv = att && s === att.move ? att.move : null, fin = !!mv && kind !== 'block' && !!(mv.hold || mv.crush || mv.id === 'air3');
+    this.hitstop = Math.max(this.hitstop, kind === 'block' ? .03 : s.ult ? .1 : fin ? .13 : (s.strong ? .085 : .045) + Math.min(5, def.comboN - 1) * .006);
+    if (fin) this.slowmo = Math.max(this.slowmo, .18);
+    this.ev({ t: 'hit', kind, x: def.x - dir * .25, y: def.y + (def.state === 'crouch' ? .7 : 1.15), dir, strong: !!s.strong || !!s.ult, adv: kind === 'block' ? 0 : adv, elem: att ? att.elem : null, att, def, dmg, fx: s.fx, fin, n: def.comboN });
     if (def.hp <= 0) this.ko(def, dir);
     return true;
   }

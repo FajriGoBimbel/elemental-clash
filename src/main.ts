@@ -269,10 +269,10 @@ function onFightEvent(e: Ev) {
     case 'round': hud?.msg(m.wins[0] === 1 && m.wins[1] === 1 ? T('Ronde Penentu', 'Final Round') : T('Ronde ', 'Round ') + e.n, m.training ? T('Latihan bebas', 'Free training') : '', 1.3); sound.round(); break;
     case 'fight': hud?.msg(T('Bertarung!', 'Fight!'), '', .8, '#ff5a1f'); sound.fight(); break;
     case 'hit': {
-      if (e.kind === 'block') sound.block(); else sound.hit(e.strong, e.elem);
+      if (e.kind === 'block') sound.block(); else sound.hit(e.strong, e.elem, e.n, e.fin);
+      if (e.fin) hud?.impact();
       if (e.adv && hud) { const [x, y] = stage.project(e.x, e.y + .7); hud.pop(x, y, e.adv); }
-      if (e.att && e.kind === 'hit') hud?.combo(e.att.idx, e.def.comboN);
-      if (e.kind === 'break') hud?.notice(T('Tangkisan jebol!', 'Guard break!'), '#ff5b5b', 1.2);
+      if (e.att && e.kind !== 'block') hud?.combo(e.att.idx, e.def.comboN, e.kind === 'break' ? 'GUARD BREAK!' : e.fin ? (e.def.comboN >= 5 ? 'BRUTAL!' : e.dmg >= 110 ? 'SMASH!' : 'NICE!') : '');
       if (e.kind !== 'block') {
         if (isLocal(e.def.idx)) vibrate(e.strong ? 45 : 18);
         buzz(e.def.idx, 'hurt'); if (e.att) buzz(e.att.idx, 'hit');
@@ -289,7 +289,8 @@ function onFightEvent(e: Ev) {
     case 'ko': sound.ko(); vibrate(120); hud?.msg('K.O.', '', 1.6, '#ff5b5b'); break;
     case 'roundEnd': if (e.reason === 'time') hud?.msg(e.winner < 0 ? T('Seri', 'Draw') : T('Waktu Habis', 'Time Up'), e.winner < 0 ? T('Ronde diulang', 'Round replayed') : '', 1.6); else if (e.reason === 'ring') { hud?.msg('Ring Out!', '', 1.6, '#6fe3b8'); sound.ko(); } break;
     case 'matchEnd': f.ctls.forEach(c => c.enabled = false); if (f.mirror) break; setTimeout(() => fight === f && (app.mode === 'versus' ? vsResult(e.winner) : result(e.winner === 0)), 900); break;
-    case 'jump': sound.jump(); break; case 'land': sound.land(); break; case 'dash': sound.dash(); break; case 'heal': sound.heal(); break;
+    case 'charged': sound.elem(e.f.elem, .8); break;
+    case 'jump': sound.jump(); break; case 'land': sound.land(e.slam); break; case 'dash': sound.dash(); break; case 'heal': sound.heal(); break;
     case 'pillarBreak': sound.boom(); hud?.notice(T('Pilar hancur!', 'Pillar destroyed!'), '#e0b955', 1.4); break;
   }
 }
@@ -305,8 +306,9 @@ function movesHtml(c: CharDef) {
     <div class="mv"><b>${T('Serangan Berat', 'Heavy Attack')}</b><span><strong>${tr(c.moves.hv.name!)}</strong> — ${T('Tekan beruntun untuk kombo teep, roundhouse, kick: ritmenya lebih lambat dari serangan ringan tapi kuat, tendangan terakhir menjatuhkan lawan. Di udara: tendangan menukik. Sambil menunduk: pukulan ke atas, ampuh melawan lompatan.', 'Tap repeatedly for a teep, roundhouse, kick combo: slower rhythm than light attacks but strong, the last kick knocks the foe down. In the air: diving kick. While crouching: rising strike, great against jump-ins.')}</span></div>
     ${(['s1', 'ult'] as const).map((k, i) => `<div class="mv"><b>${[T('Spesial', 'Special'), T('Pamungkas', 'Ultimate')][i]}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc || ['', ''])}${c.moves[k].cd ? ` <span class="mut">(${c.moves[k].cd} ${T('dtk', 's')})</span>` : ''}</span></div>`).join('')}
     <div class="mv"><b>${T('Kombo', 'Combos')}</b><span>${COMBOS.map(([k, n]) => `<strong>${k}</strong> ${tr(n)}`).join(' · ')} <span class="mut">(L = ${T('ringan', 'light')}, H = ${T('berat', 'heavy')})</span></span></div>
+    <div class="mv"><b>${T('Tahan penutup', 'Hold finisher')}</b><span>${T('Tahan tombol pukulan ke-3: Light = rentetan pukulan yang menahan lawan; Heavy = pukulan charged yang menjebol tangkisan.', 'Hold the 3rd button: Light = a flurry that keeps the foe stunned; Heavy = a charged blow that breaks guard.')}</span></div>
     <div class="mv"><b>${T('Tangkis', 'Block')}</b><span>${T('Menahan 85% damage. Tiap serangan yang ditahan memakai stamina; stamina habis = tangkisan jebol.', 'Blocks 85% of damage. Each blocked hit costs stamina; at zero your guard breaks.')}</span></div>
-    <div class="mv"><b>Dash</b><span>${T('Dengan arah: melesat cepat dan kebal sesaat. Tanpa arah: kebal di tempat. Saat terjatuh atau terlempar: lepas dari kombo. Memakai 1 stamina; pulih penuh dalam 3 detik.', 'With a direction: a quick burst with brief invulnerability. Without: invulnerable in place. While knocked down or airborne: break free. Costs 1 stamina; fully recovers in 3 seconds.')}</span></div></div>`;
+    <div class="mv"><b>Dash</b><span>${T('Dengan arah: melesat cepat dan kebal sesaat. Tanpa arah: kebal di tempat. Saat terjatuh atau terlempar: lepas dari kombo. Saat terhuyung kena pukul: combo breaker (2 stamina). Memakai 1 stamina; pulih penuh dalam ±5 detik.', 'With a direction: a quick burst with brief invulnerability. Without: invulnerable in place. While knocked down or airborne: break free. While staggered: combo breaker (2 stamina). Costs 1 stamina; fully recovers in about 5 seconds.')}</span></div></div>`;
 }
 function pause(by = -1) {
   if (fight?.guest) return fight.guest.onPause(); // layar kedua: minta host menjeda

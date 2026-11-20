@@ -14,7 +14,7 @@ const newTok = () => [...crypto.getRandomValues(new Uint8Array(8))].map(x => x.t
 const now = () => performance.now();
 const parse = (s: string) => { try { return JSON.parse(s); } catch { return null; } };
 
-const BITS = ['up', 'down', 'block', 'atk', 's1', 'dash', 'ult', 'hvy'] as const;
+const BITS = ['up', 'down', 'block', 'atk', 's1', 'dash', 'ult', 'hvy', 'atkHold', 'hvyHold'] as const;
 const EDGE = ['atk', 'hvy', 's1', 'dash', 'ult'] as const;
 export type Frame = [number, number];
 export function pack(i: Input): Frame { let b = 0; BITS.forEach((k, n) => { if (i[k]) b |= 1 << n; }); return [Math.round(i.mx * 100), b]; }
@@ -28,6 +28,7 @@ export class RemoteInput {
       const s = seq - k, f = frames[k]; if (s <= this.lastSeq || !Array.isArray(f)) continue;
       this.lastSeq = s; const b = f[1] | 0;
       this.held.mx = Math.max(-1, Math.min(1, (f[0] | 0) / 100)); this.held.up = !!(b & 1); this.held.down = !!(b & 2); this.held.block = !!(b & 4);
+      this.held.atkHold = !!(b & (1 << BITS.indexOf('atkHold'))); this.held.hvyHold = !!(b & (1 << BITS.indexOf('hvyHold')));
       EDGE.forEach(e => { if (b & (1 << BITS.indexOf(e))) this.edges[e] = true; });
     }
   }
