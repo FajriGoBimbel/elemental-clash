@@ -1,11 +1,11 @@
 import { ArenaDef, CharDef, Elem, StatusFx, elemMul, ARENA_BONUS, BOSS_CYCLE } from '../data';
-import { Fighter, Input, noInput } from './fighter';
+import { Fighter, Input, MAX_STAM, noInput } from './fighter';
 
 export const W = 9;          // setengah lebar arena (dinding)
 export const RING = 7.6;     // tepi platform Puncak Awan
 export const ROUND_TIME = 60;
 
-export interface HitSpec { dmg: number; kb?: [number, number]; stun?: number; launch?: boolean; strong?: boolean; fx?: StatusFx; ult?: boolean; soft?: boolean; otg?: boolean; heavy?: boolean; crush?: boolean; drain?: number }
+export interface HitSpec { grab?: boolean; pin?: boolean; dmg: number; kb?: [number, number]; stun?: number; launch?: boolean; strong?: boolean; fx?: StatusFx; ult?: boolean; soft?: boolean; otg?: boolean; heavy?: boolean; crush?: boolean; drain?: number }
 export interface Ent extends HitSpec {
   id: number; kind: 'proj' | 'zone'; vis: string; owner: Fighter | null; elem: Elem | null;
   x: number; y: number; vx: number; vy: number; g?: number; w: number; h: number; // zone: y..y+h ; proj: pusat y, tinggi h
@@ -139,7 +139,11 @@ export class Match {
     if (hi < def.x - .38 || lo > def.x + .38 || y1 < def.y || y0 > def.y + def.hurtH) return;
     att.hitDone = true; att.multiT = mv.multi || 0;
     // pukulan udara yang kena menahan penyerang sebentar di udara agar kombo udara tersambung
-    if (this.applyHit(att, def, mv, att.x) && mv.air) att.vy = Math.max(att.vy, 5);
+    if (this.applyHit(att, def, mv, att.x)) {
+      if (mv.air) att.vy = Math.max(att.vy, 5);
+      if (mv.sub) this.submission(att, def);
+      if (mv.throw) this.hurl(att, def, mv.throw);
+    }
   }
 
   private hurtPillar(p: Pillar, dmg: number) {
@@ -155,6 +159,7 @@ export class Match {
     if (f.hp <= 0) this.ko(f, 0);
   }
   private ko(f: Fighter, dir: number) {
+    f.held = 0;
     f.setHit(0, dir * 8, 8, true); f.state = 'ko';
     this.hitstop = .14; this.ev({ t: 'ko', f }); this.endRound(1 - f.idx, 'ko');
   }
@@ -162,6 +167,7 @@ export class Match {
   applyHit(att: Fighter | null, def: Fighter, s: HitSpec, srcX: number): boolean {
     const otg = def.state === 'down' && def.landed; // lawan terbaring: hanya serangan bawah (otg) yang kena
     if (def.inv > 0 || !def.alive || def.state === 'getup' || def.state === 'win' || (otg && !s.otg)) return false;
+    if (s.grab && (!def.grounded || def.state === 'down')) return false; // tangkapan tidak bisa meraih lawan di udara / terbaring
     if (this.phase !== 'fight') return false;
     const dir = Math.sign(def.x - srcX) || (att ? att.face : 1);
     let mul = 1 / def.def.def, adv = 0;
@@ -173,7 +179,7 @@ export class Match {
     const inCombo = def.state === 'hit' || def.state === 'down'; // otg ikut skala kombo agar tidak bisa loop tanpa batas
     def.comboN = inCombo ? def.comboN + 1 : 1;
     const scale = Math.max(.45, 1 - .08 * (def.comboN - 1));
-    const blocking = def.state === 'block' && (Math.abs(srcX - def.x) < .3 || Math.sign(srcX - def.x) === def.face);
+    const blocking = !s.grab && def.state === 'block' && (Math.abs(srcX - def.x) < .3 || Math.sign(srcX - def.x) === def.face);
     const kb = s.kb || [3, 0];
     let dmg = s.dmg * mul, kind = 'hit';
     if (blocking) {
@@ -184,17 +190,19 @@ export class Match {
       } else {
         def.stam -= cost; dmg *= .15; kind = 'block'; def.lock = .2; def.push = dir * (4 + kb[0] * .3); def.comboN = 0;
       }
-    } else if (def.state === 'attack' && def.move?.armor && def.phase <= 2 && !s.ult) {
+    } else if (def.state === 'attack' && def.move?.armor && def.phase <= 2 && !s.ult && !s.grab) {
       dmg *= .6; kind = 'armor';
     } else {
       dmg *= scale;
       this.status(def, s.fx);
       const stun = (s.stun ?? .3) + (s.fx?.shock || 0);
-      if (otg) def.setHit(stun, dir * 1, 11, true); // knockup: terangkat tinggi, sedikit terdorong, bisa dikejar
+      if (otg && s.pin) { def.st = 0; def.hitSeq++; if (att?.move?.pin) this.mount(att, def); } // kunci maut mengatur posisinya sendiri // ground & pound: lawan tertahan di lantai selama dipukuli
+      else if (otg) def.setHit(stun, dir * 1, 11, true); // knockup: terangkat tinggi, sedikit terdorong, bisa dikejar
       else def.setHit(stun, dir * kb[0], kb[1], !!s.launch || def.comboN >= 9);
       if (def.comboN >= 9) def.inv = 1.2;
     }
     def.hp = def.freeHp ? def.def.hp : Math.max(this.training ? 1 : 0, def.hp - dmg); this.lastHurt[def.idx] = this.clock;
+    if (att && s.grab && kind === 'hit' && att.def.tough) att.stam = Math.min(MAX_STAM, att.stam + 1); // pasif Tahan Banting
     if (att && s.drain && kind === 'hit') { att.hp = Math.min(att.def.hp, att.hp + dmg * s.drain); this.ev({ t: 'heal', f: att }); }
     if (att && !s.ult) att.energy = Math.min(100, att.energy + dmg * (kind === 'block' ? .05 : .075));
     def.energy = Math.min(100, def.energy + dmg * .05);
@@ -251,6 +259,39 @@ export class Match {
       case 'trap': Z({ vis: 'trap', x: Math.max(-W + 1, Math.min(W - 1, f.x + dir * 3.2)), w: 1.3, h: .8, dmg: 40, kb: [0, 0], stun: .25, fx: { root: 1.5 }, delay: .4, life: 7, trap: true, onlyGround: true }); break;
       case 'golem': Z({ vis: 'golem', x: Math.max(-W + 1, Math.min(W - 1, f.x + dir * 1.3)), w: 1.6, h: 2.6, dmg: 0, life: 5, golem: true, cd: .7, swing: 0, sl: 0, hp: 280, hpMax: 280, hurt: 0, gseq: -1 }); break;
     }
+  }
+
+  /** Kunci Maut: lawan yang tertangkap ditindih (pukulan beruntun) lalu dikunci lengannya; keduanya tertahan sampai selesai. */
+  private submission(att: Fighter, def: Fighter) {
+    if (!def.alive) return;
+    const lock = 1.95;
+    def.state = 'down'; def.landed = true; def.y = 0; def.vx = def.vy = def.push = 0; def.st = 0; def.move = null;
+    def.held = lock; def.comboN = 0; this.mount(att, def); // skala kombo direset agar seluruh rangkaian kena penuh
+    att.startMove(att.def.moves.ultGnp, this); att.inv = lock + .3;
+    const blow = (dmg: number, last = false) => { if (def.alive && this.phase === 'fight') this.applyHit(att, def, { dmg, ult: true, otg: true, pin: true, stun: .3, strong: last, kb: [0, 0] }, att.x); }; // kuncian penutup juga menahan lawan tetap terbaring
+    for (let i = 0; i < 6; i++) this.sched.push({ t: .12 + i * .17, fn: () => blow(24) });
+    this.sched.push({ t: 1.2, fn: () => { if (!att.alive) return; att.startMove(att.def.moves.ultArm, this);
+      // melompat dari posisi menindih, berbalik di udara, lalu jatuh telentang di sisi kepala lawan (posisi armbar)
+      const tx = def.x - def.face * .75; att.face = def.face; att.y = .01; att.vy = 6; att.vx = (tx - att.x) / .375; } });
+    this.sched.push({ t: 1.65, fn: () => { def.held = 0; blow(150, true); this.ev({ t: 'subFinish', f: att, x: def.x }); } });
+  }
+
+  /** Posisi menindih lawan terbaring: lawan rebah dengan kepala di belakang arah hadapnya (lihat pose 'lie'),
+   *  jadi penyerang ditaruh di atas dada menghadap kepalanya. */
+  private mount(att: Fighter, def: Fighter) {
+    const d = def.face; // .45: tinju penyerang tepat di kepala lawan
+    def.x = Math.max(-W + 1.6, Math.min(W - 1.6, def.x));
+    att.x = def.x - d * .45; att.face = -d;
+  }
+  /** Suplex: lawan dipeluk & diangkat di depan, lalu dilempar ke belakang penyerang (kecepatan dari knockback-nya). */
+  private hurl(att: Fighter, def: Fighter, t: number) {
+    if (!def.alive) return;
+    const vx = def.vx;
+    def.held = t + .1; def.x = att.x + att.face * .7; def.y = .35; // di depan dada penyerang, tidak saling tembus
+    // ikut ayunan lengan penyerang yang melengkung ke belakang: busur dari depan dada ke atas bahunya sebelum dilepas
+    const x0 = def.x, f = att.face;
+    for (let k = 1; k <= 5; k++) this.sched.push({ t: t * (.4 + k * .12), fn: () => { if (def.held <= 0) return; const a = k / 5 * 1.25; def.x = x0 - f * .7 * (1 - Math.cos(a)); def.y = .35 + 1.1 * Math.sin(a); } });
+    this.sched.push({ t, fn: () => { if (def.held > 0) { def.held = 0; def.vx = vx; def.vy = -6; def.thrown = true; def.st = 0; } } }); // sudah di atas bahu: dihempas turun ke lantai di belakang penyerang
   }
 
   private hurtGolem(g: Ent, dmg: number) {

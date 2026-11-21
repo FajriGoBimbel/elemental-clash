@@ -1,6 +1,6 @@
 // Data game: elemen, karakter, jurus, arena, tingkat bot, mode cerita.
 export type L = [string, string]; // [Indonesia, English]
-export type Elem = 'air' | 'api' | 'batu' | 'angin' | 'petir' | 'tumbuhan';
+export type Elem = 'air' | 'api' | 'batu' | 'angin' | 'petir' | 'tumbuhan' | 'netral';
 
 export const ELEM_ORDER: Elem[] = ['air', 'api', 'batu', 'angin', 'petir', 'tumbuhan'];
 
@@ -11,6 +11,8 @@ export const ELEMS: Record<Elem, { name: L; col: number; acc: number; strong: El
   angin: { name: ['Angin', 'Wind'], col: 0x6fe3b8, acc: 0xeef9f6, strong: ['api', 'tumbuhan'], weak: ['batu', 'petir'] },
   petir: { name: ['Petir', 'Lightning'], col: 0x7a6bff, acc: 0xffe83a, strong: ['air', 'angin'], weak: ['batu', 'tumbuhan'] },
   tumbuhan: { name: ['Tumbuhan', 'Plant'], col: 0x1fae5e, acc: 0xff8fc0, strong: ['air', 'petir'], weak: ['api', 'angin'] },
+  // bela diri murni: tidak unggul dan tidak kalah dari elemen mana pun (damage selalu ×1)
+  netral: { name: ['Bela Diri', 'Martial'], col: 0xc9ced6, acc: 0xff4d4d, strong: [], weak: [] },
 };
 
 export const ADV = 1.25, DIS = 0.8, ARENA_BONUS = 1.1;
@@ -25,6 +27,11 @@ export interface Move {
   id: string; name?: L; desc?: L; anim: string;
   su: number; ac: number; re: number; dmg: number;
   box?: [number, number, number, number]; // x0, x1 (ke depan), y0, y1 relatif terhadap kaki
+  /** `grab` = tangkapan/bantingan: menembus tangkisan & armor, tapi luput bila lawan di udara atau terbaring.
+   *  `pin` = pukulan ke lawan terbaring yang menahannya tetap di lantai (ground & pound). `sub` = pamungkas kuncian (lihat Match.submission). */
+  grab?: boolean; pin?: boolean; sub?: boolean;
+  /** bantingan: lawan dipegang & diangkat selama sekian detik sebelum dilempar (suplex) */
+  throw?: number;
   kb?: [number, number]; stun?: number; launch?: boolean; strong?: boolean; otg?: boolean; // otg: bisa mengenai lawan yang terbaring & melontarkannya
   lunge?: number; armor?: boolean; inv?: boolean; multi?: number;
   /** bagian damage yang kembali sebagai HP penyerang bila kena (bukan ditangkis) */
@@ -42,13 +49,15 @@ export interface Move {
 }
 export interface Look {
   h: number; bulk: number; sh: number; skin: number; c1: number; c2: number; hair: number;
-  style: 'flow' | 'flame' | 'rock' | 'swoosh' | 'bolt' | 'leaf' | 'crown';
+  style: 'flow' | 'flame' | 'rock' | 'swoosh' | 'bolt' | 'leaf' | 'crown' | 'afro';
 }
 export interface CharDef {
   id: string; name: string; elem: Elem; role: L; style: L;
   hp: number; spd: number; atk: number; def: number; jump: number; tempo: number; regen?: number;
   stats: [number, number, number, number]; // kekuatan, kecepatan, pertahanan, jangkauan (1–5)
   look: Look; moves: Record<string, Move>; price: number; boss?: boolean;
+  /** pasif Tahan Banting: bangun lebih cepat, bantingan yang kena memulihkan 1 stamina */
+  tough?: boolean;
 }
 
 /** Serangan dasar + kombo 3 gerakan (L = Light, H = Heavy):
@@ -97,6 +106,35 @@ const basic = (reach: number, pw = 1, hv: Partial<Move> = {}, fin: Partial<Move>
   }
   return mv;
 };
+
+/** Kiting Man (MMA): striking di Light, clinch & bantingan di Heavy, ground & pound setelah takedown. */
+function kitingMoves(): Record<string, Move> {
+  const mv = basic(1.15, 1, { name: ['Clinch & Bantingan', 'Clinch & Takedown'] }, {}, {
+    a3: { name: ['Tendangan Betis', 'Calf Kick'], desc: ['Penutup L-L-L: tendangan rendah ke betis yang membuat kaki lawan goyah dan melambat. Tahan Light: Overhand yang menjatuhkan lawan.', "L-L-L finisher: a low kick to the calf that buckles the foe's leg and slows them. Hold Light: an Overhand that drops the foe."],
+      anim: 'lowkick', su: .14, ac: .1, re: .34, dmg: 58, box: [.1, 1.6, 0, .8], kb: [2, 0], stun: .6, launch: false, strong: true, lunge: 2, fx: { slow: 2.5 } },
+    a3h: { name: ['Lutut Terbang', 'Flying Knee'], desc: ['L-L-H: melompat maju dan menghantamkan lutut ke dagu lawan hingga terlempar.', "L-L-H: leaps forward and drives a knee into the foe's chin, launching them."],
+      anim: 'flyknee', su: .16, ac: .14, re: .42, dmg: 88, box: [.1, 1.5, .6, 2.2], kb: [6, 9], hop: 6, lunge: 6, launch: true, strong: true },
+    hv: { name: ['Lutut Clinch', 'Clinch Knees'], desc: ['Pembuka Heavy: memegang kepala lawan lalu menghantamkan lutut dua kali.', "Heavy opener: grabs the foe's head and drives two knees in."],
+      anim: 'gknee', ac: .22, multi: .11, dmg: 38, kb: [1.5, 0], stun: .7, lunge: 3 },
+    hv2: { name: ['Sikut Turun', 'Downward Elbow'], anim: 'elbowdown', dmg: 78, kb: [2.5, 0], stun: .8 },
+    hv3: { name: ['Takedown', 'Takedown'], desc: ['Penutup H-H-H: menyeruduk pinggang lawan dan membantingnya. Tidak bisa ditangkis, tapi luput bila lawan melompat. Tekan Light setelahnya untuk Ground & Pound.', "H-H-H finisher: shoots for the foe's waist and slams them down. Can't be blocked, but misses a jumping foe. Press Light afterwards for Ground & Pound."],
+      anim: 'takedown', su: .22, ac: .14, re: .5, dmg: 80, box: [.1, 1.5, 0, 1.4], kb: [2, 5], stun: .5, launch: true, lunge: 9, grab: true, branch: { atk: 'gnp' } },
+    hhl: { name: ['Tinju Belakang Putar', 'Spinning Backfist'], anim: 'spinfist' },
+    hl: { name: ['Superman Punch', 'Superman Punch'] },
+  });
+  // tahan Light di penutup L-L-L: Overhand (bukan rentetan pukulan seperti karakter lain)
+  mv.a3C = { ...mv.a3C, name: ['Overhand', 'Overhand'], anim: 'overhand', multi: undefined, ac: .1, dmg: 92, box: [.1, 1.5, .7, 1.9], kb: [5, 7], stun: .5, launch: true, strong: true, fx: undefined, lunge: 3 };
+  mv.gnp = { id: 'gnp', name: ['Ground & Pound', 'Ground & Pound'], desc: ['H-H-H-L: menindih lawan yang terbanting lalu memukulinya bertubi-tubi; lawan tertahan di lantai selama dipukul.', 'H-H-H-L: mounts the slammed foe and rains down punches, pinning them to the floor while it lasts.'],
+    anim: 'gnp', su: .12, ac: .6, re: .4, dmg: 20, multi: .12, box: [-.8, 1.4, -.2, .9], kb: [0, 0], stun: .3, otg: true, pin: true, lunge: .9 };
+  mv.s1 = { id: 's1', name: ['Bantingan Suplex', 'Suplex'], desc: ['Menangkap lawan di jarak sangat dekat lalu membantingnya ke belakang. Tidak bisa ditangkis; hindari dengan dash, lompat, atau menyerang lebih dulu.', "Grabs a foe at very close range and suplexes them behind. Can't be blocked; avoid it by dashing, jumping, or striking first."],
+    anim: 'suplex', su: .14, ac: .12, re: .55, dmg: 115, box: [.1, 1.2, 0, 1.7], kb: [-7, 10], stun: .5, launch: true, strong: true, grab: true, throw: .35, lunge: 2, cd: 5, ai: [0, 1.3] };
+  mv.ult = { id: 'ult', name: ['Kunci Maut', 'Death Lock'], desc: ['Menerjang dan menangkap lawan, menindihnya dengan pukulan beruntun, lalu menutup dengan kuncian lengan. Tidak bisa ditangkis.', "Rushes in and grabs the foe, mounts them with a flurry of punches, then finishes with an armbar. Can't be blocked."],
+    anim: 'takedown', su: .3, ac: .42, re: .5, dmg: 30, box: [.1, 1.5, 0, 1.6], kb: [1, 3], stun: .5, launch: true, lunge: 8, grab: true, sub: true, ult: true, inv: true, ai: [0, 3.5] };
+  // fase pamungkas setelah tangkapan kena (dijalankan oleh Match.submission, tanpa hitbox sendiri)
+  mv.ultGnp = { id: 'ultGnp', anim: 'gnp', su: .01, ac: 1.2, re: .05, dmg: 0, inv: true };
+  mv.ultArm = { id: 'ultArm', anim: 'armbar', su: .25, ac: .6, re: .45, dmg: 0, inv: true };
+  return mv;
+}
 
 export const CHARS: CharDef[] = [
   {
@@ -221,6 +259,13 @@ export const CHARS: CharDef[] = [
       ult: { id: 'ult', name: ['Golem Hutan', 'Forest Golem'], desc: ['Memanggil golem hutan selama 5 detik yang mengejar lawan dan menghantam tanah, memperlambat lawan. Golem bisa diserang lawan dan hancur.', 'Summons a forest golem for 5 seconds that chases the foe and pounds the ground, slowing them. The foe can attack and destroy it.'], anim: 'slam', su: .4, ac: .2, re: .55, dmg: 0, spawn: 'golem', ult: true, inv: true, ai: [0, 9] },
     },
   },
+  {
+    id: 'kiting', name: 'Kiting Man', elem: 'netral', price: 700, tough: true,
+    role: ['Petarung MMA', 'MMA Fighter'], style: ['Jarak sangat dekat: bantingan menembus tangkisan, lalu memukuli lawan yang terjatuh. Pasif Tahan Banting: bangun lebih cepat, bantingan memulihkan stamina.', 'Very close range: throws break through guard, then pounds the downed foe. Passive Tough: gets up faster, throws restore stamina.'],
+    hp: 1060, spd: 4.5, atk: 1.08, def: 1.02, jump: 11, tempo: .95, stats: [4, 4, 3, 1],
+    look: { h: 1.02, bulk: 1.12, sh: 1.12, skin: 0x8d5a3b, c1: 0x2a2a36, c2: 0xd3202e, hair: 0x1a120c, style: 'afro' },
+    moves: kitingMoves(),
+  },
 ];
 
 // Bos Mode Cerita: berganti elemen secara berurutan (pola yang bisa dipelajari).
@@ -279,8 +324,9 @@ export const STORY: Stage[] = [
   { opp: 'rival', arena: 'rival', level: 2, text: ['Final. Lawan yang elemennya menekan elemenmu.', 'The final. A foe whose element counters yours.'] },
   { opp: 'omnis', arena: 'magma', level: 2, text: ['Omnis, penguasa semua elemen, turun ke arena. Pelajari polanya.', 'Omnis, master of all elements, enters the arena. Learn the pattern.'] },
 ];
-export const ELEM_ARENA: Record<Elem, string> = { air: 'kuil', api: 'magma', batu: 'gunung', angin: 'awan', petir: 'menara', tumbuhan: 'hutan' };
+export const ELEM_ARENA: Record<Elem, string> = { air: 'kuil', api: 'magma', batu: 'gunung', angin: 'awan', petir: 'menara', tumbuhan: 'hutan', netral: 'dojo' };
 /** Rival final: karakter yang elemennya kuat melawan elemen pemain. */
 export function rivalOf(c: CharDef): CharDef {
-  return CHARS.find(o => ELEMS[o.elem].strong.includes(c.elem) && o.id !== c.id)!;
+  // elemen netral tidak punya penekan: rival final = Terrok, petarung jarak dekat yang paling kuat
+  return CHARS.find(o => ELEMS[o.elem].strong.includes(c.elem) && o.id !== c.id) || charById('terrok');
 }

@@ -56,7 +56,7 @@ function endFight() { ext = null; if (!fight) return; fight.hud?.destroy(); figh
 
 // ---------- splash ----------
 async function splash() {
-  show(`<div class="logo">Elemental<b>Clash</b></div><div class="elrow">${Object.keys(ELEMS).map(e => icon(e as any)).join('')}</div>
+  show(`<div class="logo">Elemental<b>Clash</b></div><div class="elrow">${Object.keys(ELEMS).filter(e => e !== 'netral').map(e => icon(e as any)).join('')}</div>
     <div class="load"><i></i></div><div class="mut" id="lt">${T('Memeriksa data simpanan…', 'Checking save data…')}</div>`, 'splash');
   const jobs: (() => void)[] = [...CHARS, BOSS].map(c => () => { portraits[c.id] = stage.thumbChar(c); });
   for (const a of ARENAS) jobs.push(() => { athumbs[a.id] = stage.thumbArena(a.id); });
@@ -106,7 +106,8 @@ function charInfo(c: CharDef) {
   return `<h2>${c.name}</h2><div class="row">${etag(c.elem)}<span class="mut">${tr(c.role)}</span></div><p>${tr(c.style)}</p>
     <div class="stats">${STAT().map((s, i) => `<span>${s}</span><div class="bar">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= c.stats[i] ? 'on' : ''}"></i>`).join('')}</div>`).join('')}</div>
     <div class="moves">${(['s1', 'ult'] as const).map((k, i) => `<div class="mv"><b>${[T('Spesial', 'Special'), T('Pamungkas', 'Ultimate')][i]}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc || ['', ''])}</span></div>`).join('')}</div>
-    <div class="match"><span class="up">▲ ${T('Kuat', 'Strong')}: ${E.strong.map(icon).join('')}</span><span class="dn">▼ ${T('Lemah', 'Weak')}: ${E.weak.map(icon).join('')}</span></div>`;
+    <div class="match">${E.strong.length || E.weak.length ? `<span class="up">▲ ${T('Kuat', 'Strong')}: ${E.strong.map(icon).join('')}</span><span class="dn">▼ ${T('Lemah', 'Weak')}: ${E.weak.map(icon).join('')}</span>`
+      : `<span>${T('Netral: tidak unggul dan tidak lemah terhadap elemen mana pun', 'Neutral: no advantage or weakness against any element')}</span>`}</div>`;
 }
 const thumb = (c: CharDef, sel: boolean, a = 'pick', lock = false) => `<button class="th ${sel ? 'sel' : ''} ${lock ? 'lock' : ''}" data-a="${a}" data-v="${c.id}" style="${elVar(c.elem)};background-image:url(${portraits[c.id]})" aria-label="${c.name}">${icon(c.elem)}${lock ? `<span class="price coins">${c.price}</span>` : ''}</button>`;
 function dragRotate(root: HTMLElement) {
@@ -310,6 +311,7 @@ const ANIM_NAME: Record<string, [string, string]> = {
   jab: ['Jab', 'Jab'], cross: ['Cross', 'Cross'], hook: ['Hook', 'Hook'], uppercut: ['Uppercut', 'Uppercut'], roundhouse: ['Roundhouse', 'Roundhouse'],
   spinkick: ['Tendangan Putar', 'Spinning Back Kick'], teep: ['Teep', 'Teep'], kick: ['Tendangan', 'Kick'], superman: ['Superman Punch', 'Superman Punch'], elbow: ['Sikutan', 'Elbow'],
   gknee: ['Lutut Bara', 'Ember Knee'], spinfist: ['Tinju Putar', 'Spinning Backfist'], sweep: ['Sapuan Akar', 'Root Sweep'], crescent: ['Tendangan Kipas', 'Crescent Kick'],
+  elbowdown: ['Sikut Turun', 'Downward Elbow'], lowkick: ['Tendangan Betis', 'Calf Kick'], flyknee: ['Lutut Terbang', 'Flying Knee'], takedown: ['Takedown', 'Takedown'], gnp: ['Ground & Pound', 'Ground & Pound'], overhand: ['Overhand', 'Overhand'],
 };
 const hvChain = (c: CharDef) => (['hv', 'hv2', 'hv3'] as const).map(id => { const m = c.moves[id]; return tr(m.desc ? m.name! : ANIM_NAME[m.anim] || [m.anim, m.anim]); }).join(', ');
 /** Semua rantai kombo karakter (L-L-L, H-L, ...), ditelusuri dari cabang data gerakannya. */
@@ -332,7 +334,7 @@ function movesHtml(c: CharDef) {
     <div class="mv"><b>${T('Serangan Ringan', 'Light Attack')}</b><span>${T('Tekan beruntun untuk kombo jab, cross, hook. Di udara: tendangan lompat. Sambil menunduk: sapuan.', 'Tap repeatedly for a jab, cross, hook combo. In the air: jump kick. While crouching: sweep.')}</span></div>
     <div class="mv"><b>${T('Serangan Berat', 'Heavy Attack')}</b><span><strong>${tr(c.moves.hv.name!)}</strong> — ${T(`Tekan beruntun untuk kombo ${hvChain(c)}: ritmenya lebih lambat dari serangan ringan tapi kuat, serangan terakhir menjatuhkan lawan. Di udara: tendangan menukik. Sambil menunduk: pukulan ke atas, ampuh melawan lompatan.`, `Tap repeatedly for a ${hvChain(c)} combo: slower rhythm than light attacks but strong, the last hit knocks the foe down. In the air: diving kick. While crouching: rising strike, great against jump-ins.`)}</span></div>
     ${(['s1', 'ult'] as const).map((k, i) => `<div class="mv"><b>${[T('Spesial', 'Special'), T('Pamungkas', 'Ultimate')][i]}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc || ['', ''])}${c.moves[k].cd ? ` <span class="mut">(${c.moves[k].cd} ${T('dtk', 's')})</span>` : ''}</span></div>`).join('')}
-    ${(['a2', 'a3', 'a4', 'hv3', 'hhl'] as const).filter(k => c.moves[k]?.desc).map(k => `<div class="mv"><b>${T('Ciri khas', 'Signature')}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc!)}</span></div>`).join('')}
+    ${(['a2', 'a3', 'a4', 'a3h', 'hv', 'hv3', 'hhl', 'gnp'] as const).filter(k => c.moves[k]?.desc).map(k => `<div class="mv"><b>${T('Ciri khas', 'Signature')}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc!)}</span></div>`).join('')}
     <div class="mv"><b>${T('Kombo', 'Combos')}</b><span>${combos(c).map(([k, n]) => `<strong>${k}</strong> ${n}`).join(' · ')} <span class="mut">(L = ${T('ringan', 'light')}, H = ${T('berat', 'heavy')})</span></span></div>
     <div class="mv"><b>${T('Tahan penutup', 'Hold finisher')}</b><span>${T('Tahan tombol pukulan ke-3: Light = rentetan pukulan yang menahan lawan; Heavy = pukulan charged yang menjebol tangkisan.', 'Hold the 3rd button: Light = a flurry that keeps the foe stunned; Heavy = a charged blow that breaks guard.')}</span></div>
     <div class="mv"><b>${T('Tangkis', 'Block')}</b><span>${T('Menahan 85% damage. Tiap serangan yang ditahan memakai stamina; stamina habis = tangkisan jebol. Saat terjatuh atau terlempar: tekan untuk langsung bangun dan kebal sesaat, seperti dash (1 stamina).', 'Blocks 85% of damage. Each blocked hit costs stamina; at zero your guard breaks. While knocked down or airborne: tap to get up instantly with brief invulnerability, like dash (1 stamina).')}</span></div>

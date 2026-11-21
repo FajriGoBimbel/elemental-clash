@@ -69,6 +69,7 @@ class Sound {
       case 'angin': this.noise(.34, .24 * v, 2400, 'bandpass', 5200, 2); break;
       case 'petir': this.noise(.16, .32 * v, 5200, 'highpass'); this.tone(1900, .1, 'sawtooth', .1 * v, 260); break;
       case 'tumbuhan': this.noise(.22, .2 * v, 3200, 'bandpass', 900, 4); this.tone(330, .16, 'triangle', .1 * v, 495); break;
+      case 'netral': this.noise(.09, .35 * v, 1200, 'lowpass', 300); this.tone(120, .1, 'sine', .25 * v, 60); break; // tamparan sarung tangan
     }
   }
   thunder() { this.noise(.9, .7, 2400, 'lowpass', 70); this.tone(70, .7, 'sine', .5, 30); }

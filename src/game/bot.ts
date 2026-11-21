@@ -80,7 +80,8 @@ export class Bot {
       if (this.wantHold && me.chargeT < (hm[1] === 'hvy' ? .42 : .32)) { if (hm[1] === 'hvy') inp.hvyHold = true; else inp.atkHold = true; }
     }
 
-    // 1. sedang menahan tangkisan
+    // 1. sedang menahan tangkisan (dilepas bila lawan memulai bantingan, agar sempat dihindari di langkah 2)
+    if (this.blockT > 0 && s.phase === 1 && opp.move?.grab && s.seq !== this.seenSeq) this.blockT = 0;
     if (this.blockT > 0) {
       this.blockT -= dt;
       if (this.blockT > 0 || (s.phase > 0 && s.phase < 3 && dist < s.reach + 1)) { inp.block = true; return inp; }
@@ -90,9 +91,15 @@ export class Bot {
     if (s.phase > 0 && s.phase < 3 && s.seq !== this.seenSeq && dist < s.reach + .9 && me.actionable) {
       this.seenSeq = s.seq; this.react = rnd(L.react[0], L.react[1]);
       const canBlock = me.stam >= 1 || !L.read, r = Math.random();
-      if (L.hard && me.stam >= 1 && Math.random() < .35) { inp.dash = true; this.setPlan('combo', 1); return inp; } // kebal di tempat lalu balas
-      if (r < L.block && canBlock) { this.blockT = .3; this.counter = Math.random() < L.punish; inp.block = true; return inp; }
-      if (r < L.block + L.dodge && me.stam >= 1) { inp.dash = true; if (Math.abs(me.x - to * 2) < edge) inp.mx = -to; return inp; } // terpojok: kebal di tempat
+      // bantingan (grab) menembus tangkisan: hindari dengan dash kebal atau lompat
+      if (opp.move?.grab) {
+        // bantingan lebih sulit dibaca daripada pukulan; pamungkas (jeda sinematiknya memberi waktu lihat) hanya sesekali lolos
+        if (r < (opp.move.ult ? L.dodge * .5 : L.dodge + L.block * .5)) { if (me.stam >= 1) inp.dash = true; else inp.up = true; return inp; }
+      } else {
+        if (L.hard && me.stam >= 1 && Math.random() < .35) { inp.dash = true; this.setPlan('combo', 1); return inp; } // kebal di tempat lalu balas
+        if (r < L.block && canBlock) { this.blockT = .3; this.counter = Math.random() < L.punish; inp.block = true; return inp; }
+        if (r < L.block + L.dodge && me.stam >= 1) { inp.dash = true; if (Math.abs(me.x - to * 2) < edge) inp.mx = -to; return inp; } // terpojok: kebal di tempat
+      }
     }
     // 3. proyektil dan zona yang ditandai
     if (me.actionable) for (const e of m.ents) {
@@ -169,7 +176,7 @@ export class Bot {
       if (L.read) aggr += blkRate > .45 ? .12 : this.habit.n > 6 && blkRate < .15 ? -.12 : 0;
       const mvs = me.def.moves;
       const opts: [string, number][] = [];
-      if (me.cd1 <= 0 && dist >= mvs.s1.ai![0] && dist <= mvs.s1.ai![1]) opts.push(['s1', L.skill]);
+      if (me.cd1 <= 0 && dist >= mvs.s1.ai![0] && dist <= mvs.s1.ai![1]) opts.push(['s1', L.skill + (mvs.s1.grab && s.block ? 1.2 : 0)]); // bantingan: jawaban untuk lawan yang bertahan
       if (mvs.s2 && me.cd2 <= 0 && dist >= mvs.s2.ai![0] && dist <= mvs.s2.ai![1]) opts.push(['s2', L.skill]);
       if (dist > 4.5) { opts.push(['approach', aggr], ['wait', (1 - aggr) * .6]); }
       else if (dist > reach + .5) { opts.push(['approach', aggr], ['wait', (1 - aggr) * .4], ['jumpin', .07 + L.dodge * .1], ['retreat', L.arena ? .12 : .05]); }

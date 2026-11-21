@@ -12,6 +12,8 @@ const PATHS: Record<Elem, string> = {
   batu: '<path d="M12 2.5l7.6 4.6v9.4L12 21.5l-7.6-5V7.1z"/><path d="M12 2.5v6.2l7.6-1.6M12 8.7l-7.6-1.6M12 8.7l-3 6.3 3 6.5 3-6.5z" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1"/>',
   angin: '<path d="M3 8.5h9.5a2.8 2.8 0 1 0-2.8-2.8M3 12.5h14.5a3 3 0 1 1-3 3M3 16.5h6.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
   petir: '<path d="M13.6 2L5 13.6h5.6L9.4 22 19 9.6h-5.6z"/>',
+  // kepalan tangan bersarung (bela diri)
+  netral: '<path d="M6.5 9.2c0-1.5 1.2-2.7 2.7-2.7h6.6c1.9 0 3.4 1.5 3.4 3.4v3.6c0 3.4-2.7 6.1-6.1 6.1h-1.6c-2.8 0-5-2.2-5-5z"/><path d="M9.6 6.5v3.4M12.6 6.5v3.4M15.6 6.5v3.4M6.5 12.4h5.2" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1.1" stroke-linecap="round"/>',
   tumbuhan: '<path d="M20.5 3.5C10 3.3 4.4 8.4 4.4 15c0 1.2.2 2.3.6 3.3l-1.7 2 1.4 1.2 1.7-2c1 .5 2.2.8 3.5.8 6.6 0 10.4-6.2 10.6-16.8zM8 17c1.6-4 4.4-7 8.4-9.2" /><path d="M8 17c1.6-4 4.4-7 8.4-9.2" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="1.2" stroke-linecap="round"/>',
 };
 export const icon = (e: Elem) => `<span class="eic" style="--el:${hex(ELEMS[e].col)}"><svg class="ic" viewBox="0 0 24 24">${PATHS[e]}</svg></span>`;
