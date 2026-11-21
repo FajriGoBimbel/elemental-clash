@@ -32,7 +32,7 @@ interface Fight {
   /** kontrol sentuh/keyboard di layar ini dan slot pemain yang dikendalikan masing-masing */
   ctls: Controls[]; ctlSlot: number[]; src: (() => Input)[];
   /** mode 2 Layar di perangkat kedua: keadaan datang dari host, tidak disimulasikan di sini */
-  mirror?: Mirror; guest?: { slot: number; onPause: () => void };
+  mirror?: Mirror; guest?: { slot: number; onPause: () => void; names?: [string, string] };
   /** Main Bareng: siapa yang menjeda (-1 = host), modal jeda, slot yang terputus */
   pauseBy: number; pauseEl: HTMLElement | null; dropSlot: number;
 }
@@ -241,12 +241,12 @@ function vsBanner(p1: CharDef, p2: CharDef) {
 function guestStart(o: GuestOpts, onPause: () => void) {
   endFight(); setIdle(false);
   const p1 = charById(o.p[0]), p2 = charById(o.p[1]), arena = arenaById(o.a);
-  const m = new Match({ p1, p2, arena, pure: o.pure }); m.events.length = 0;
+  const m = new Match({ p1, p2, arena, pure: o.pure, need: o.need }); m.events.length = 0;
   ui.innerHTML = ''; stage.showSpin = 0;
   const view = new FightView(stage, m);
   fight = {
     m, view, hud: null, bot: null, demo: null, paused: false, acc: 0, started: false, oppId: o.p[1], arenaId: o.a, level: 1,
-    ctls: [], ctlSlot: [], src: [], pauseBy: -1, pauseEl: null, dropSlot: -1, mirror: new Mirror(m), guest: { slot: o.slot, onPause },
+    ctls: [], ctlSlot: [], src: [], pauseBy: -1, pauseEl: null, dropSlot: -1, mirror: new Mirror(m), guest: { slot: o.slot, onPause, names: o.names },
   };
   view.vsT = 2.2; view.onEvent = onFightEvent; sound.music(arena.id);
   vsBanner(p1, p2);
@@ -259,7 +259,7 @@ const guestApi = {
 };
 function beginRound1() {
   const f = fight!; ui.innerHTML = '';
-  f.hud = new Hud(ui, f.m, portraits, app.mode === 'tour' ? ext?.names : undefined); f.hud.pauseBtn.addEventListener('click', () => pause());
+  f.hud = new Hud(ui, f.m, portraits, f.guest?.names ?? (app.mode === 'tour' ? ext?.names : undefined)); f.hud.pauseBtn.addEventListener('click', () => pause());
   if (f.guest) { const g = f.guest; f.ctls = [new Controls(ui, f.m.f[g.slot].elem, { keys: KEYMAP.solo })]; f.ctlSlot = [g.slot]; }
   else if (app.mode === 'versus') vsControls(f);
   else if (app.mode === 'tour') { // turnamen: kontrol di layar hanya untuk pembuat yang ikut bermain
@@ -282,6 +282,7 @@ function laughFx(fi: Fighter, n = 0) {
 function onFightEvent(e: Ev) {
   const f = fight; if (!f) return; const hud = f.hud, m = f.m;
   if (vs?.cfg === 'D' && !f.mirror) vs.evq.push(e); // diteruskan ke layar kedua bersama snapshot
+  else if (app.mode === 'tour' && ext && !f.mirror) ext.ev(e); // turnamen: diteruskan ke layar tiap peserta
   switch (e.t) {
     case 'round': hud?.msg(m.wins[0] === 1 && m.wins[1] === 1 ? T('Ronde Penentu', 'Final Round') : T('Ronde ', 'Round ') + e.n, m.training ? T('Latihan bebas', 'Free training') : '', 1.3); sound.round(); break;
     case 'fight': hud?.msg(T('Bertarung!', 'Fight!'), '', .8, '#ff5a1f'); sound.fight(); break;
@@ -516,7 +517,7 @@ function vsMenu() {
       ${card('B', T('Layar + 1 Kontroler', 'Screen + 1 Controller'), T('Pemain 1 sentuh di layar ini, Pemain 2 memakai HP-nya sebagai joystick.', 'Player 1 uses touch here, Player 2 uses their phone as a gamepad.'), T('2 perangkat', '2 devices'), true)}
       ${card('C', T('Layar + 2 Kontroler', 'Screen + 2 Controllers'), T('Kedua pemain memakai HP masing-masing; layar ini hanya menampilkan pertarungan.', 'Both players use their own phones; this screen only shows the fight.'), T('3 perangkat · tablet atau TV', '3 devices · tablet or TV'), true)}
       ${card('D', T('2 Layar', 'Two Screens'), T('Tiap pemain di perangkat & layarnya sendiri, mis. desktop lawan desktop. Pemain 2 gabung dengan kode.', 'Each player on their own device and screen, e.g. desktop vs desktop. Player 2 joins with the code.'), T('2 perangkat · 2 layar', '2 devices · 2 screens'), true)}
-      <button class="vcard tour" data-a="cfg" data-v="T" ${lan ? '' : 'disabled'}><span class="dev trophy">${SVG_CUP}</span><h3>${T('Turnamen Bareng', 'Tournament')}</h3><p>${T('4–16 peserta gabung dengan kode; undian & bagan otomatis, main bergiliran di layar ini.', '4–16 players join with a code; automatic draw & bracket, matches played here in turns.')}</p><small>${T('4–16 peserta', '4–16 players')}</small></button>
+      <button class="vcard tour" data-a="cfg" data-v="T" ${lan ? '' : 'disabled'}><span class="dev trophy">${SVG_CUP}</span><h3>${T('Turnamen Bareng', 'Tournament')}</h3><p>${T('2–16 peserta gabung dengan kode; undian & bagan otomatis, tiap peserta bertanding di layar perangkatnya sendiri.', '2–16 players join with a code; automatic draw & bracket, each player fights on their own screen.')}</p><small>${T('2–16 peserta', '2–16 players')}</small></button>
       <button class="vcard join" data-a="join" ${lan ? '' : 'disabled'}><span class="dev pad">${SVG_PAD}</span><h3>${T('Gabung dengan Kode', 'Join with Code')}</h3><p>${T('Masukkan kode ruangan dari layar host. Perangkat ini jadi kontroler, atau layar Pemain 2 di mode 2 Layar.', 'Enter the room code from the host. This device becomes a gamepad, or Player 2\'s screen in Two Screens mode.')}</p><small>${T('Perangkat ini', 'This device')}</small></button>
     </div>
     <p class="vnote ${lan ? '' : 'warn'}">${lan

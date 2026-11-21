@@ -55,10 +55,19 @@ blackhole.add((c1 as any).sock.addr); await until(() => drops.includes(0), 5000)
 await wait(1500); blackhole.clear();
 await until(() => backs.includes(0) && c1.state === 'in', 15000); check(c1.slot === 0, 'kontroler kembali ke slot 0 tanpa kode/izin ulang');
 
+console.log('4b) halaman kontroler dimuat ulang (nomor urut input mulai dari 0 lagi)');
+const r1 = new ClientLink(mk('HP-A2'), 'HP-A'); await r1.start(); c1.leave(); // c1 sudah mengirim ±180 input → nomor urut lama tinggi
+r1.resume(host.code, c1.tok); await until(() => r1.state === 'in'); check(r1.slot === 0, 'sambung ulang dengan token yang sama → slot 0');
+r1.setReader(() => { const i = noInput(); i.mx = -1; return i; }); await wait(300);
+check(host.input[0].read().mx === -1, 'input dari halaman yang dimuat ulang langsung diterima host');
+const ri = host.input[0]; ri.push(5000, [[100, 0]]); ri.push(1, [[-100, 0]]);
+check(ri.read().mx === -1, 'nomor urut yang mulai dari awal lagi tidak diabaikan');
+r1.setReader(null);
+
 console.log('5) paket UDP tanpa token dibuang');
 host.input[1].read(); (c3 as any).sock.udpSend((c2 as any).host, 47820, JSON.stringify({ t: 'in', k: 'palsu', s: 999, f: [[100, 8]] }));
 await wait(100); check(!host.input[1].read().atk, 'input palsu diabaikan');
 
 console.log('6) host menutup ruangan');
-host.close(); await until(() => c1.state === 'fail' && c2.state === 'fail'); check(c1.why === 'closed', 'kontroler diberi tahu ruangan ditutup');
+host.close(); await until(() => r1.state === 'fail' && c2.state === 'fail'); check(r1.why === 'closed', 'kontroler diberi tahu ruangan ditutup');
 console.log(`\n${ok} lolos, ${bad} gagal`); process.exit(bad ? 1 : 0);

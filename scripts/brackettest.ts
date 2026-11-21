@@ -1,4 +1,4 @@
-// Unit test mesin bagan Turnamen Bareng (CR-002): semua format × semua jumlah peserta 4–16, banyak seed.
+// Unit test mesin bagan Turnamen Bareng (CR-002): semua format × semua jumlah peserta 2–16, banyak seed.
 // Pakai: npx tsx scripts/brackettest.ts
 import { BYE, FORMATS, Format, formatOk, makeBracket, matchCount, nextMatch, podium, report, rng, standings, status, Bracket } from '../src/game/bracket';
 
@@ -20,8 +20,8 @@ function run(b: Bracket, seed: number, opt: { wo?: boolean; ties?: boolean } = {
   return played;
 }
 
-for (const f of FORMATS) for (let n = 4; n <= 16; n++) {
-  if (!formatOk(f, n)) { check(f === 'gr' && (n < 6 || (n > 8 && n < 12)), `${f}/${n}: ketersediaan format salah`); continue; }
+for (const f of FORMATS) for (let n = 2; n <= 16; n++) {
+  if (!formatOk(f, n)) { check((f === 'gr' && (n < 6 || (n > 8 && n < 12))) || (f === 'de' && n < 3), `${f}/${n}: ketersediaan format salah`); continue; }
   for (let s = 1; s <= 25; s++) {
     const seed = 1000 + s * 7919 + n;
     const b = makeBracket(n, f, seed, s % 2 === 0), tag = `${f}/${n}/seed${seed}`;

@@ -1,11 +1,11 @@
-// Mesin bagan Turnamen Bareng (CR-002): murni data, tanpa UI/jaringan, sehingga bisa diuji untuk semua 4–16 peserta.
+// Mesin bagan Turnamen Bareng (CR-002): murni data, tanpa UI/jaringan, sehingga bisa diuji untuk semua 2–16 peserta.
 // Input: jumlah peserta, format, seed → struktur pertandingan; hasil dilaporkan lewat report(), bagan diperbarui otomatis.
 // Peserta = indeks 0..n-1. BYE (-1) = slot kosong / lolos otomatis.
 
 export type Format = 'se' | 'de' | 'rr' | 'gr';
 export const FORMATS: Format[] = ['se', 'de', 'rr', 'gr'];
 export const BYE = -1;
-export const MIN_P = 4, MAX_P = 16;
+export const MIN_P = 2, MAX_P = 16;
 
 type Src = { p: number } | { bye: 1 } | { w: number } | { l: number } | { g: number; r: number };
 /** st: W = bagan atas/gugur, L = bagan bawah, F = final besar, R = liga, G = grup, K = gugur setelah grup, P = playoff seri */
@@ -22,6 +22,7 @@ export interface Bracket {
 /** Format yang tersedia untuk jumlah peserta n (CR-002 Bagian 5). */
 export function formatOk(f: Format, n: number) {
   if (n < MIN_P || n > MAX_P) return false;
+  if (f === 'de') return n >= 3; // 2 peserta: tidak ada bagan bawah
   return f !== 'gr' || (n >= 6 && n <= 8) || (n >= 12 && n <= 16);
 }
 const pow2 = (n: number) => { let p = 1; while (p < n) p *= 2; return p; };

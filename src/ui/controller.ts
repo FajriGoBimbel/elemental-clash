@@ -10,7 +10,7 @@ import { $, bind, elVar, esc, etag, icon, modal, show, sigIcon, ui } from './dom
 import { T, persist, save, tr } from '../save';
 import { sound } from '../audio';
 
-export interface GuestOpts { p: [string, string]; a: string; pure: boolean; slot: number }
+export interface GuestOpts { p: [string, string]; a: string; pure: boolean; slot: number; names?: [string, string]; need?: number }
 /** Mode 2 Layar: perangkat ini merender pertarungan sendiri (disediakan main.ts). */
 interface GuestApi { start(o: GuestOpts, onPause: () => void): void; read(): Input; snap(s: unknown): void; end(): void }
 interface Ctx { portraits: Record<string, string>; athumbs: Record<string, string>; resume?: boolean; code?: string; guest: GuestApi; exit: () => void }
@@ -68,7 +68,7 @@ function play(s: any) {
   if (s.cfg === 'D') {
     if (guestMid === (s.mid ?? 0)) return;
     padOff(); guestMid = s.mid ?? 0;
-    ctx.guest.start({ p: s.p, a: s.a, pure: !!s.pure, slot: link!.slot }, () => link?.cmd('pause'));
+    ctx.guest.start({ p: s.p, a: s.a, pure: !!s.pure, slot: s.side ?? link!.slot, names: s.names, need: s.need }, () => link?.cmd('pause'));
     link!.setReader(() => ctx.guest.read());
   } else if (!pad) padOn(s.id || '');
 }

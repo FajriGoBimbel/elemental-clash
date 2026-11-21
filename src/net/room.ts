@@ -27,7 +27,9 @@ export class RemoteInput {
   push(seq: number, frames: Frame[]) {
     if (!Array.isArray(frames)) return;
     for (let k = Math.min(frames.length, 3) - 1; k >= 0; k--) {
-      const s = seq - k, f = frames[k]; if (s <= this.lastSeq || !Array.isArray(f)) continue;
+      const s = seq - k, f = frames[k];
+      if (k === 0 && s < this.lastSeq - 120) this.lastSeq = s - 3; // nomor urut mulai dari awal lagi (kontroler dimuat ulang) → terima, jangan abaikan
+      if (s <= this.lastSeq || !Array.isArray(f)) continue;
       this.lastSeq = s; const b = f[1] | 0;
       this.held.mx = Math.max(-1, Math.min(1, (f[0] | 0) / 100)); this.held.up = !!(b & 1); this.held.down = !!(b & 2); this.held.block = !!(b & 4);
       this.held.atkHold = !!(b & (1 << BITS.indexOf('atkHold'))); this.held.hvyHold = !!(b & (1 << BITS.indexOf('hvyHold')));
@@ -101,6 +103,7 @@ export class HostRoom {
       if (p) { // sambung ulang: tanpa kode ulang dan tanpa izin ulang
         const old = p.conn, was = p.up; p.conn = id; p.host = host; p.uport = m.uport; p.last = now(); p.up = true;
         if (old !== id) this.sock.tcpClose(old);
+        this.input[p.slot] = new RemoteInput(); // halaman kontroler yang dimuat ulang menghitung nomor urut input dari 0 lagi
         this.send(p.slot, { t: 'ok', slot: p.slot, tok: p.tok, host: this.hostName });
         this.onBack(p.slot); this.onChange(); return; // selalu: kontroler yang dimuat ulang butuh layar terkini meski host belum sempat menandainya putus
       }

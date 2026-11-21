@@ -1,4 +1,4 @@
-// Uji end-to-end Turnamen Bareng (CR-002): host desktop + 3 HP peserta + 1 bot pengisi, gugur tunggal best of 1,
+// Uji end-to-end Turnamen Bareng (CR-002): host desktop + 3 perangkat peserta (bertanding di layar masing-masing) + 1 bot pengisi, gugur tunggal best of 1,
 // sampai juara; termasuk nama kembar ditolak, Undi Ulang, dan host dimuat ulang di tengah turnamen (Lanjutkan Turnamen).
 // Pakai: npm run dev, lalu URL=http://localhost:5173 node scripts/tour-e2e.mjs <folder>   (LAN=web untuk uji WebRTC)
 import puppeteer from 'puppeteer-core';
@@ -30,16 +30,19 @@ try {
   await click(host, '[data-a="new"]'); await until(host, '!!document.querySelector(".tform")');
   for (let i = 0; i < 4; i++) await click(host, '[data-a="max"][data-v="-1"]'); // 8 → 4
   await click(host, '[data-a="bo"][data-v="1"]'); await click(host, '[data-a="bots"]');
-  check(await host.$eval('.step b', e => e.textContent) === '4', 'peserta maksimal bisa diatur (4) dan tidak di bawah 4');
-  await click(host, '[data-a="max"][data-v="-1"]'); check(await host.$eval('.step b', e => e.textContent) === '4', 'nilai di bawah 4 tidak bisa dipilih');
+  check(await host.$eval('.step b', e => e.textContent) === '4', 'peserta maksimal bisa diatur (4)');
+  for (let i = 0; i < 3; i++) await click(host, '[data-a="max"][data-v="-1"]');
+  check(await host.$eval('.step b', e => e.textContent) === '2', 'minimal 2 peserta: tidak bisa di bawah 2');
+  for (let i = 0; i < 2; i++) await click(host, '[data-a="max"][data-v="1"]'); // kembali ke 4 untuk uji berikutnya
   await shot(host, '02-create');
   const t0 = Date.now(); await click(host, '[data-a="go"]'); await until(host, 'document.querySelectorAll(".code b").length === 6');
   check(Date.now() - t0 < 2000, `kode turnamen tampil dalam ${Date.now() - t0} ms`);
   const code = await host.$$eval('.code b', b => b.map(x => x.textContent).join('')); log('kode', code);
 
-  const pb = await launch(); const ps = [];
+  const ps = []; // tiap peserta perangkat sendiri (browser terpisah) agar layarnya tetap merender saat bertanding
   for (const [i, name] of ['Andi', 'Budi', 'Cici'].entries()) {
-    const p = i === 0 ? (await pb.pages())[0] : await pb.newPage(); watch(p, name); ps.push(p);
+    const p = (await (await launch()).pages())[0]; watch(p, name); ps.push(p);
+    await p.evaluateOnNewDocument(`Object.defineProperty(document, 'hidden', { get: () => false })`);
     await p.setViewport({ width: 844, height: 390, deviceScaleFactor: 1.5, isMobile: true, hasTouch: true, isLandscape: true });
     await p.goto(base, { waitUntil: 'load' }); await ready(p);
     await click(p, '[data-a="versus"]'); await click(p, '[data-a="join"]'); await until(p, '!!document.querySelector(".keypad")');
@@ -78,7 +81,18 @@ try {
     await until(host, '__ec.fight && __ec.fight.started && __ec.fight.m.phase === "fight"', 30000);
     if (played === 0) {
       check(await host.evaluate('__ec.fight.m.need') === 1, 'best of 1: cukup menang 1 ronde');
-      const c0 = [...called][0]; await until(c0, '!!document.querySelector(".cpad")'); await shot(host, '09-fight'); await shot(c0, '10-hp-pad');
+      const c0 = [...called][0];
+      await until(c0, '!!(__ec.fight && __ec.fight.guest && __ec.fight.started)', 20000);
+      check(!(await c0.$('.cpad')), 'peserta bertanding di layarnya sendiri (pertarungan penuh, bukan joystick)');
+      await until(c0, '__ec.fight.m.need === 1 && /Andi|Budi|Cici|Bot/i.test(document.querySelector("#ui").innerText)', 10000);
+      check(true, 'layar peserta: best of 1 dan nama peserta di HUD');
+      const hp0 = await c0.evaluate('__ec.fight.m.f[0].hp'); await host.evaluate('__ec.fight.m.f[0].hp -= 100');
+      await until(c0, `__ec.fight.m.f[0].hp < ${hp0}`, 5000); check(true, 'layar peserta mengikuti keadaan pertarungan dari host');
+      const side = await c0.evaluate('__ec.fight.guest.slot'), x0 = await host.evaluate(`__ec.fight.m.f[${side}].x`);
+      await c0.bringToFront(); await c0.keyboard.down('KeyD'); await wait(700); await c0.keyboard.up('KeyD'); await wait(300);
+      const x1 = await host.evaluate(`__ec.fight.m.f[${side}].x`);
+      check(Math.abs(x1 - x0) > 0.3, `keyboard di laptop peserta menggerakkan petarungnya di host (sisi ${side}: ${x0.toFixed(2)} → ${x1.toFixed(2)})`);
+      await shot(host, '09-fight'); await shot(c0, '10-peserta-fight');
     }
     const winSide = played % 2; // ganti-ganti pemenang
     await host.evaluate(`__ec.fight.m.f[${1 - winSide}].hp = 10; __ec.fight.m.time = 0.05`);

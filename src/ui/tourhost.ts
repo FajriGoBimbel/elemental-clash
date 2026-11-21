@@ -1,4 +1,4 @@
-// Turnamen Bareng (CR-002) — sisi pembuat/host: buat turnamen, lobi 4–16 peserta, undian, bagan, giliran, WO,
+// Turnamen Bareng (CR-002) — sisi pembuat/host: buat turnamen, lobi 2–16 peserta, undian, bagan, giliran, WO,
 // simpan otomatis & lanjutkan. Semua keputusan dihitung di sini; HP peserta hanya menampilkan data publik.
 import { BMatch, BYE, Format, FORMATS, MAX_P, MIN_P, done, formatOk, makeBracket, matchCount, newSeed, nextMatch, podium, report, standings } from '../game/bracket';
 import { HostRoom } from '../net/room';
@@ -6,7 +6,8 @@ import { getSock } from '../net/transport';
 import { Bot } from '../game/bot';
 import { BOT_LEVELS, CHARS, arenaById, charById } from '../data';
 import { Input, noInput } from '../game/fighter';
-import type { Match } from '../game/match';
+import type { Ev, Match } from '../game/match';
+import { snapshot } from '../net/sync';
 import { $, $$, elVar, esc, etag, icon, modal, show, sigIcon, toast } from './dom';
 import { T, save, tr } from '../save';
 import { sound } from '../audio';
@@ -19,6 +20,7 @@ export interface Ext {
   input(i: number, m: Match, dt: number): Input | null; // null = kontrol di layar ini
   buzz(i: number, k: 'hit' | 'hurt' | 'ult'): void;
   tick(t: number, m: Match): void;
+  ev(e: Ev): void; // event pertarungan → dikirim ke layar peserta bersama snapshot
   pause(by: number): void;
   end(winner: number, wins: number[]): void;
 }
@@ -43,7 +45,7 @@ let ctx: TourCtx, tour: Tour | null = null, room: HostRoom | null = null, timer 
 let slotOf: number[] = [];                                  // peserta → slot ruangan (-1 = tidak tersambung)
 const pendErr = new Map<number, string>();                  // slot yang belum mengisi nama → pesan galat terakhir
 let call: { id: number; ready: [boolean, boolean]; t0: number } | null = null;
-let play: { id: number; bots: (Bot | null)[]; drop: number; dropAt: number; pauseBy: number; fbT: number; el: HTMLElement | null } | null = null;
+let play: { id: number; bots: (Bot | null)[]; drop: number; dropAt: number; pauseBy: number; fbT: number; el: HTMLElement | null; arena: string; evq: Ev[] } | null = null;
 
 const loadSaved = (): Tour | null => { try { const t = JSON.parse(localStorage.getItem(KEY) || 'null'); return t?.v === 1 ? t : null; } catch { return null; } };
 const persistTour = () => { try { if (tour) localStorage.setItem(KEY, JSON.stringify(tour)); } catch { /* penyimpanan penuh/tidak tersedia */ } };
@@ -59,11 +61,11 @@ const view = (name: string) => { const again = scr === name; scr = name; return 
 // ---------- menu ----------
 export function tourMenu(c: TourCtx) {
   ctx = c; ctx.bg(); const sv = loadSaved(), resumable = sv && sv.phase !== 'done';
-  show(`<div class="title"><h2>${T('Turnamen Bareng', 'Tournament')}</h2><span class="mut">${T('4–16 peserta · bagan & undian otomatis', '4–16 players · automatic bracket & draw')}</span></div>
+  show(`<div class="title"><h2>${T('Turnamen Bareng', 'Tournament')}</h2><span class="mut">${T(`${MIN_P}–${MAX_P} peserta · bagan & undian otomatis`, `${MIN_P}–${MAX_P} players · automatic bracket & draw`)}</span></div>
     <div class="vcards tcards">
       <button class="vcard" data-a="new"><h3>${T('Buat Turnamen', 'Create Tournament')}</h3><p>${T('Layar ini jadi host: atur format, bagikan kode, lalu pertandingan dimainkan bergiliran di sini.', 'This screen hosts: pick a format, share the code, then matches are played here in turns.')}</p><small>${T('Pembuat', 'Host')}</small></button>
       ${resumable ? `<button class="vcard join" data-a="resume"><h3>${T('Lanjutkan Turnamen', 'Resume Tournament')}</h3><p><b>${esc(sv!.title)}</b> · ${fmtName(sv!.fmt)} · ${sv!.ps.length} ${T('peserta', 'players')}<br>${T('Kode', 'Code')} ${sv!.code}</p><small>${T('Tersimpan otomatis', 'Auto-saved')}</small></button>` : ''}
-      <button class="vcard" data-a="join"><h3>${T('Gabung dengan Kode', 'Join with Code')}</h3><p>${T('Ikut turnamen dari HP ini: masukkan kode, isi nama, pilih karakter.', 'Join from this phone: enter the code, your name, and a fighter.')}</p><small>${T('Peserta', 'Player')}</small></button>
+      <button class="vcard" data-a="join"><h3>${T('Gabung dengan Kode', 'Join with Code')}</h3><p>${T('Ikut dari laptop/HP ini: masukkan kode, isi nama, pilih karakter. Kamu bertanding di layar perangkatmu sendiri.', 'Join from this laptop/phone: enter the code, your name and a fighter. You fight on your own screen.')}</p><small>${T('Peserta', 'Player')}</small></button>
     </div>
     <div class="foot"><button class="btn" data-a="back">${T('Kembali', 'Back')}</button></div>`, 'dim', {
     new: () => { if (resumable) { const o = modal(`<h2>${T('Buat turnamen baru?', 'Start a new tournament?')}</h2><p>${T('Turnamen tersimpan akan dihapus.', 'The saved tournament will be deleted.')}</p><div class="mbtns"><button class="btn pri" data-a="y">${T('Buat baru', 'Create new')}</button><button class="btn" data-a="n">${T('Batal', 'Cancel')}</button></div>`, { y: () => { o.remove(); clearSaved(); createScreen(); }, n: () => o.remove() }); } else createScreen(); },
@@ -83,8 +85,8 @@ function createScreen() {
   show(`<div class="title"><h2>${T('Buat Turnamen', 'Create Tournament')}</h2><span class="mut">${T('Bisa diubah sampai turnamen dimulai', 'Editable until the tournament starts')}</span></div>
     <div class="tform">
       ${row(T('Nama turnamen', 'Tournament name'), `<input class="tin" data-k="title" maxlength="24" value="${esc(d.title)}">`)}
-      ${row(T('Peserta maksimal', 'Max players'), `<div class="step"><button data-a="max" data-v="-1">−</button><b>${d.max}</b><button data-a="max" data-v="1">+</button></div>`, '4–16')}
-      ${row(T('Format', 'Format'), seg('fmt', FORMATS.map(f => [f, fmtName(f)]), d.fmt), d.fmt === 'gr' ? grNote : '')}
+      ${row(T('Peserta maksimal', 'Max players'), `<div class="step"><button data-a="max" data-v="-1">−</button><b>${d.max}</b><button data-a="max" data-v="1">+</button></div>`, `${MIN_P}–${MAX_P}`)}
+      ${row(T('Format', 'Format'), seg('fmt', FORMATS.map(f => [f, fmtName(f)]), d.fmt), d.fmt === 'gr' ? grNote : d.fmt === 'de' ? T('minimal 3 peserta', 'at least 3 players') : '')}
       ${d.fmt === 'de' ? row(T('Final besar diulang', 'Grand final reset'), tog('reset', d.reset), T('jika juara bagan bawah menang', 'if the lower-bracket winner wins')) : ''}
       ${row(T('Panjang pertandingan', 'Match length'), seg('bo', [['1', 'Best of 1'], ['3', 'Best of 3']], String(d.bo)), T('60 detik per ronde', '60 s per round'))}
       ${row(T('Kunci karakter', 'Lock fighters'), tog('lock', d.lock), T('karakter tetap selama turnamen', 'fighter stays the same all tournament'))}
@@ -92,7 +94,7 @@ function createScreen() {
       ${row(T('Mode Murni', 'Pure Mode'), tog('pure', d.pure), T('tanpa efek arena', 'no arena hazards'))}
       ${row(T('Bot pengisi slot kosong', 'Fill empty slots with bots'), `${d.bots ? seg('lvl', BOT_LEVELS.slice(0, 4).map((l, i) => [String(i), tr(l.name)]), String(d.botLvl)) : ''}${tog('bots', d.bots)}`)}
       ${row(T('Pembuat ikut bermain', 'Host also plays'), `${d.host ? `<input class="tin sm" data-k="hostName" maxlength="${NAME_MAX}" placeholder="${T('Nama kamu', 'Your name')}" value="${esc(d.hostName)}">` : ''}${tog('host', d.host)}`, T('main dengan kontrol di layar ini', 'plays with this screen\'s controls'))}
-      <p class="test ${warnRR ? 'warn' : ''}">${T(`Estimasi: ${matchCount(d.fmt, d.max)} pertandingan · ± ${est} menit untuk ${d.max} peserta`, `Estimate: ${matchCount(d.fmt, d.max)} matches · ~${est} min for ${d.max} players`)}${warnRR ? ' — ' + T('liga di atas 8 peserta sangat lama; disarankan maksimal 8.', 'a league above 8 players takes very long; 8 max is recommended.') : ''}${d.fmt === 'gr' && !formatOk('gr', d.max) ? ' — ' + T(`grup lalu gugur butuh ${grNote}.`, `groups need ${grNote}.`) : ''}</p>
+      <p class="test ${warnRR ? 'warn' : ''}">${T(`Estimasi: ${matchCount(d.fmt, d.max)} pertandingan · ± ${est} menit untuk ${d.max} peserta`, `Estimate: ${matchCount(d.fmt, d.max)} matches · ~${est} min for ${d.max} players`)}${warnRR ? ' — ' + T('liga di atas 8 peserta sangat lama; disarankan maksimal 8.', 'a league above 8 players takes very long; 8 max is recommended.') : ''}${d.fmt === 'gr' && !formatOk('gr', d.max) ? ' — ' + T(`grup lalu gugur butuh ${grNote}.`, `groups need ${grNote}.`) : ''}${d.fmt === 'de' && !formatOk('de', d.max) ? ' — ' + T('gugur ganda butuh minimal 3 peserta.', 'double elimination needs at least 3 players.') : ''}</p>
     </div>
     <div class="foot"><button class="btn" data-a="back">${T('Kembali', 'Back')}</button><button class="btn pri" data-a="go">${T('Buat & Buka Pendaftaran', 'Create & Open Registration')}</button></div>`, 'dim', {
     max: v => { d.max = Math.max(MIN_P, Math.min(MAX_P, d.max + +v)); createScreen(); },
@@ -201,7 +203,9 @@ function scrFor(slot: number): object {
   const k = inPlay(i);
   if (play && k >= 0) {
     const m = t.br!.ms[play.id], names = [t.ps[m.a!].name, t.ps[m.b!].name];
-    return ctx.paused() ? { ...base, s: 'pause', slot: k, by: play.pauseBy, drop: play.drop, id: p.char, bn: names[play.pauseBy] ?? '', dn: names[play.drop] ?? '' } : { ...base, s: 'fight', id: p.char, mid: play.id };
+    // cfg D: pertarungan tampil penuh di perangkat peserta (laptop lawan laptop), bukan hanya joystick
+    const g = { ...base, cfg: 'D', p: [t.ps[m.a!].char, t.ps[m.b!].char], a: play.arena, pure: t.pure, side: k, names, need: need(m), mid: play.id, id: p.char };
+    return ctx.paused() ? { ...g, s: 'pause', slot: k, by: play.pauseBy, drop: play.drop, bn: names[play.pauseBy] ?? '', dn: names[play.drop] ?? '' } : { ...g, s: 'fight' };
   }
   if (call && inCall(i)) {
     const m = t.br!.ms[call.id], sd = callSide(i), o = t.ps[sd ? m.a! : m.b!];
@@ -301,7 +305,7 @@ function runScreen() {
     const cm = b.ms[call.id], left = callLeft();
     const st = (i: number, k: number) => `<div class="cr ${call!.ready[k] ? 'ok' : ''}">${nmx(i)}<i>${call!.ready[k] ? T('Siap', 'Ready') : online(i) ? T('Menunggu…', 'Waiting…') : T('Terputus', 'Offline')}</i></div>`;
     side = `<h3>${T('Dipanggil', 'Called')}</h3>${st(cm.a!, 0)}<div class="vs">VS</div>${st(cm.b!, 1)}
-      <p class="mut">${T(`Tekan Siap di HP dalam <b class="cleft">${left}</b> detik. Tidak siap = kalah WO.`, `Press Ready on the phone within <b class="cleft">${left}</b> s. Not ready = walkover loss.`)}${cm.defer ? ' ' + T('(sudah pernah ditunda)', '(already postponed once)') : ''}</p>`;
+      <p class="mut">${T(`Tekan Siap di perangkat peserta dalam <b class="cleft">${left}</b> detik. Tidak siap = kalah WO.`, `Press Ready on the player's device within <b class="cleft">${left}</b> s. Not ready = walkover loss.`)}${cm.defer ? ' ' + T('(sudah pernah ditunda)', '(already postponed once)') : ''}</p>`;
   } else if (m) {
     const bots = t.ps[m.a!].kind === 'bot' && t.ps[m.b!].kind === 'bot';
     side = `<h3>${T('Pertandingan berikutnya', 'Next match')}</h3><div class="cr">${nmx(m.a!)}</div><div class="vs">VS</div><div class="cr">${nmx(m.b!)}</div>
@@ -346,7 +350,7 @@ function startPlay(id: number) {
   const t = tour!, m = t.br!.ms[id], a = t.ps[m.a!], b = t.ps[m.b!];
   const arena = t.arena === 'random' || !save.arenas.includes(t.arena) ? save.arenas[Math.floor(Math.random() * save.arenas.length)] : t.arena;
   const lvl = BOT_LEVELS[t.botLvl] ?? BOT_LEVELS[1];
-  play = { id, bots: [a.kind === 'bot' ? new Bot(lvl) : null, b.kind === 'bot' ? new Bot(lvl) : null], drop: -1, dropAt: 0, pauseBy: -1, fbT: 0, el: null };
+  play = { id, bots: [a.kind === 'bot' ? new Bot(lvl) : null, b.kind === 'bot' ? new Bot(lvl) : null], drop: -1, dropAt: 0, pauseBy: -1, fbT: 0, el: null, arena, evq: [] };
   scr = 'fight'; const P = [m.a!, m.b!];
   const ext: Ext = {
     names: [a.name, b.name], local: [a.kind === 'host', b.kind === 'host'], need: need(m),
@@ -356,8 +360,13 @@ function startPlay(id: number) {
       const sl = slotOf[P[i]]; return sl >= 0 && room?.ready(sl) ? room.input[sl].read() : noInput();
     },
     buzz: (i, k) => { const sl = slotOf[P[i]]; if (sl >= 0 && !play?.bots[i]) room?.buzz(sl, k); },
+    ev: e => { play?.evq.push(e); },
     tick: (now, mt) => {
-      if (!play || now - play.fbT < 66) return; play.fbT = now;
+      if (!play) return;
+      // tiap peserta bertanding di layarnya sendiri: kirim keadaan pertarungan tiap frame (host tetap satu-satunya penghitung)
+      const ss = snapshot(mt, play.evq.splice(0));
+      P.forEach((pi, i) => { const sl = slotOf[pi]; if (sl >= 0 && !play!.bots[i]) room?.state(sl, ss); });
+      if (now - play.fbT < 66) return; play.fbT = now;
       P.forEach((pi, i) => { const sl = slotOf[pi], x = mt.f[i]; if (sl >= 0 && room?.ready(sl)) room.fb(sl, { hp: Math.round(Math.max(0, x.hp)), mh: x.def.hp, en: Math.round(x.energy), c1: +(x.cd1 / (x.def.moves.s1.cd || 1)).toFixed(2), c2: 0, st: +x.stam.toFixed(2), w: i ? [mt.wins[1], mt.wins[0]] : mt.wins }); });
     },
     pause: by => { if (!play) return; play.pauseBy = by; pauseModal(); syncAll(); },
