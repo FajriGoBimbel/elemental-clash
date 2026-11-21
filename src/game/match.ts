@@ -17,14 +17,14 @@ export interface Ent extends HitSpec {
 }
 export interface Pillar { x: number; hp: number }
 export type Ev = { t: string;[k: string]: any };
-export interface MatchOpts { p1: CharDef; p2: CharDef; arena: ArenaDef; pure: boolean; training?: boolean }
+export interface MatchOpts { p1: CharDef; p2: CharDef; arena: ArenaDef; pure: boolean; training?: boolean; /** ronde yang harus dimenangkan (best of 3 = 2, best of 1 = 1) */ need?: number }
 
 const NO = noInput();
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 
 export class Match {
   f: [Fighter, Fighter]; ents: Ent[] = []; events: Ev[] = []; pillars: Pillar[] = [];
-  arena: ArenaDef; pure: boolean; training: boolean;
+  arena: ArenaDef; pure: boolean; training: boolean; need = 2;
   phase: 'intro' | 'fight' | 'ko' | 'over' = 'intro'; pt = 0; time = ROUND_TIME; round = 1; wins = [0, 0]; winner = -1;
   freeze = 0; hitstop = 0; slowmo = 0; wind = 0; windT = 0;
   private hazT = 5; private hazDir = 1; private sched: { t: number; fn: () => void }[] = []; private nid = 1;
@@ -32,7 +32,7 @@ export class Match {
 
   constructor(o: MatchOpts) {
     this.f = [new Fighter(o.p1, 0), new Fighter(o.p2, 1)];
-    this.arena = o.arena; this.pure = o.pure; this.training = !!o.training;
+    this.arena = o.arena; this.pure = o.pure; this.training = !!o.training; this.need = o.need ?? 2;
     this.startRound();
   }
   get ringOut() { return this.arena.id === 'awan' && !this.pure; }
@@ -85,7 +85,7 @@ export class Match {
       const w = this.winner >= 0 ? this.f[this.winner] : null;
       if (w && this.pt > .9 && w.state !== 'win' && (w.actionable || w.state === 'attack' && w.phase === 3)) { w.state = 'win'; w.st = 0; w.move = null; w.vx = 0; }
       if (this.pt >= 3.2) {
-        if (this.winner >= 0 && this.wins[this.winner] >= 2) { this.phase = 'over'; this.ev({ t: 'matchEnd', winner: this.winner }); }
+        if (this.winner >= 0 && this.wins[this.winner] >= this.need) { this.phase = 'over'; this.ev({ t: 'matchEnd', winner: this.winner }); }
         else { if (this.winner >= 0) this.round++; this.startRound(); }
       }
     }
@@ -95,7 +95,7 @@ export class Match {
     if (this.phase !== 'fight') return;
     this.phase = 'ko'; this.pt = 0; this.winner = winner; this.ents = []; this.sched = []; this.wind = 0;
     if (winner >= 0) this.wins[winner]++;
-    const final = winner >= 0 && this.wins[winner] >= 2;
+    const final = winner >= 0 && this.wins[winner] >= this.need;
     if (final && reason === 'ko') this.slowmo = .9;
     this.ev({ t: 'roundEnd', winner, reason, final });
   }

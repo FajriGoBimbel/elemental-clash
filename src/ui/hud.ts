@@ -3,19 +3,19 @@ import { ELEMS, hex } from '../data';
 import { Fighter, MAX_STAM } from '../game/fighter';
 import { Match } from '../game/match';
 import { save, T, tr } from '../save';
-import { $, icon, elVar } from './dom';
+import { $, icon, elVar, esc } from './dom';
 
 export class Hud {
   el: HTMLElement; private q: Record<string, HTMLElement> = {}; private lastElem: string[] = ['', '']; private comboT = [0, 0]; private noticeT = 0;
-  constructor(parent: HTMLElement, private m: Match, portraits: Record<string, string>) {
+  constructor(parent: HTMLElement, private m: Match, portraits: Record<string, string>, names?: [string, string]) {
     const el = this.el = document.createElement('div'); el.className = 'hud';
     const side = (f: Fighter, c: string) => `<div class="pl ${c}" style="${elVar(f.elem)}">
       <div class="por" style="background-image:url(${portraits[f.def.id]})"></div>
-      <div class="bars"><div class="nm"><span>${f.def.name}</span><span class="ei">${icon(f.elem)}</span><span class="sts"></span></div>
+      <div class="bars"><div class="nm"><span>${names ? `${esc(names[f.idx])} <small>${f.def.name}</small>` : f.def.name}</span><span class="ei">${icon(f.elem)}</span><span class="sts"></span></div>
       <div class="hp"><i class="ghost"></i><i class="fill"></i></div>
       <div class="sub"><div class="en"><i></i></div><div class="stm">${'<b></b>'.repeat(MAX_STAM)}</div></div></div></div>`;
     el.innerHTML = `<div class="hud-top">${side(m.f[0], 'p1')}
-      <div class="mid"><div class="timer">60</div><div class="pips"><span class="w0"><b></b><b></b></span><span class="w1"><b></b><b></b></span></div><div class="rnd"></div></div>
+      <div class="mid"><div class="timer">60</div><div class="pips"><span class="w0">${'<b></b>'.repeat(m.need)}</span><span class="w1">${'<b></b>'.repeat(m.need)}</span></div><div class="rnd"></div></div>
       ${side(m.f[1], 'p2')}</div>
       <div class="msg"></div><div class="notice"></div><div class="combo l"></div><div class="combo r"></div><div class="ultban"></div><div class="pops"></div><div class="impact"></div>
       <button class="pause" aria-label="${T('Jeda', 'Pause')}">II</button>

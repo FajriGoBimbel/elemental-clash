@@ -11,10 +11,12 @@
     "sim": "tsx scripts/sim.ts",
     "shot": "node scripts/shot.mjs",
     "test:net": "tsx scripts/nettest.ts",
+    "test:bracket": "tsx scripts/brackettest.ts",
     "test:mp": "node scripts/mp-e2e.mjs",
     "test:mp2": "node scripts/mp2-e2e.mjs",
     "test:pad": "node scripts/pad-e2e.mjs",
-    "test:share": "node scripts/share-e2e.mjs"
+    "test:share": "node scripts/share-e2e.mjs",
+    "test:tour": "node scripts/tour-e2e.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

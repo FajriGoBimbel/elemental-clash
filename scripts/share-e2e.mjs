@@ -15,6 +15,8 @@ const click = async (p, sel) => { await p.waitForSelector(sel, { timeout: 20000 
 const until = (p, js, t = 20000) => p.waitForFunction(js, { timeout: t, polling: 50 });
 const wait = ms => new Promise(r => setTimeout(r, ms));
 let ok = 0, bad = 0; const check = (c, m) => { log((c ? '  ok    ' : '  GAGAL ') + m); c ? ok++ : bad++; };
+/** Link dari modal bisa memakai VITE_SHARE_URL (mis. domain Vercel); di uji, buka kode yang sama di server lokal. */
+const local = l => { const u = new URL(l), b = new URL(base); b.search = u.search; return b.toString(); };
 const PHONE = { width: 844, height: 390, deviceScaleFactor: 1.5, isMobile: true, hasTouch: true, isLandscape: true };
 
 try {
@@ -29,7 +31,7 @@ try {
   await host.screenshot({ path: `${out}/01-share-modal.png` });
   await click(host, '.sharem [data-a="close"]');
   // HP membuka link
-  const hp = await launch('hp', PHONE); await hp.goto(link, { waitUntil: 'load' });
+  const hp = await launch('hp', PHONE); await hp.goto(local(link), { waitUntil: 'load' });
   await until(host, '!!document.querySelector(".over [data-a=yes]")', 90000);
   check(await hp.evaluate('!location.search.includes("join=")'), 'link dibuka: HP langsung meminta bergabung, parameter join dihapus dari alamat');
   await hp.screenshot({ path: `${out}/02-hp-wait.png` });
@@ -43,7 +45,7 @@ try {
   await click(host, '.menu [data-a="pad"]'); await until(host, '!!document.querySelector(".padm [data-a=share]")');
   await click(host, '.padm [data-a="share"]'); await until(host, '!!document.querySelector(".sharem .sh-url")');
   const link2 = await host.$eval('.sh-url', e => e.value);
-  const hp2 = await launch('hp2', PHONE); await hp2.goto(link2, { waitUntil: 'load' });
+  const hp2 = await launch('hp2', PHONE); await hp2.goto(local(link2), { waitUntil: 'load' });
   await until(host, '!!document.querySelector(".over [data-a=yes]")', 90000); await click(host, '.over [data-a="yes"]');
   await until(hp2, '!!document.querySelector(".cwait")'); check(await host.evaluate('!!document.querySelector(".padb.on, .padm .slot.ok")'), 'link joystick solo: HP tersambung sebagai joystick');
 } catch (e) { console.log('BERHENTI:', e.message.split('\n')[0]); bad++; }

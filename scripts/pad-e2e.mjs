@@ -38,7 +38,7 @@ try {
   const x0 = await host.evaluate('__ec.fight.m.f[0].x');
   await hp.keyboard.down('KeyD'); await wait(800); await hp.keyboard.up('KeyD');
   const x1 = await host.evaluate('__ec.fight.m.f[0].x'); check(x1 > x0 + .5, `joystick HP menggerakkan P1: ${x0.toFixed(2)} → ${x1.toFixed(2)}`);
-  let s0 = await host.evaluate('__ec.fight.m.f[0].seq'); await hp.keyboard.press('KeyH'); await wait(500);
+  let s0 = await host.evaluate('__ec.fight.m.f[0].seq'); await hp.keyboard.press('KeyK'); await wait(500);
   check(await host.evaluate('__ec.fight.m.f[0].seq') > s0, 'tombol Serangan Berat dari HP dijalankan');
   await wait(600); s0 = await host.evaluate('__ec.fight.m.f[0].seq'); await host.keyboard.press('KeyJ'); await wait(400);
   check(await host.evaluate('__ec.fight.m.f[0].seq') > s0, 'keyboard di layar tetap bisa dipakai bersamaan');
