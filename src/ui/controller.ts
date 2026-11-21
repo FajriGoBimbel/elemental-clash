@@ -1,10 +1,12 @@
 // Mode Kontroler: HP ini menjadi joystick + tombol untuk host Main Bareng.
 // Tidak merender arena 3D (hemat baterai); semua hasil pertarungan dihitung di host.
-import { ELEMS, arenaById, charById, hex } from '../data';
+import { CHARS, ELEMS, arenaById, charById, hex } from '../data';
 import { ClientLink, CODE_ABC, RECONNECT_MS } from '../net/room';
 import { getSock } from '../net/transport';
 import { Controls, KEYMAP } from './input';
 import { noInput, type Input } from '../game/fighter';
+import { bracketHtml, tourInfo, tourName, validTour } from './bracket';
+import { nextMatch } from '../game/tour';
 import { $, bind, elVar, esc, etag, icon, modal, show, sigIcon, ui } from './dom';
 import { T, persist, save, tr } from '../save';
 import { sound } from '../audio';
@@ -61,7 +63,9 @@ function play(s: any) {
   if (s.cfg === 'D') {
     if (guestMid === (s.mid ?? 0)) return;
     padOff(); guestMid = s.mid ?? 0;
-    ctx.guest.start({ p: s.p, a: s.a, pure: !!s.pure, slot: link!.slot }, () => link?.cmd('pause'));
+    // Turnamen Online: side = petarung yang dikendalikan (0/1), -1 = hanya menonton
+    const side = typeof s.side === 'number' ? (s.side === 0 || s.side === 1 ? s.side : -1) : link!.slot;
+    ctx.guest.start({ p: s.p, a: s.a, pure: !!s.pure, slot: side }, () => link?.cmd('pause'));
     link!.setReader(() => ctx.guest.read());
   } else if (!pad) padOn(s.id || '');
 }
@@ -194,6 +198,7 @@ function inScreen() {
         ? `${top()}<div class="cwait"><h2>${T('Joystick siap!', 'Gamepad ready!')}</h2><p>${T('Pilih mode & karakter di layar utama. Joystick aktif saat pertarungan dimulai.', 'Pick a mode & fighter on the main screen. The gamepad turns on when the fight starts.')}</p><p class="mut">${T('Bisa dipakai di Pertandingan Cepat, Mode Cerita, dan Latihan.', 'Works in Quick Match, Story Mode and Training.')}</p></div>`
         : `${top()}<div class="cwait"><span class="spin big"></span><h2>${s.w === 'arena' ? T('Pemain 1 memilih arena…', 'Player 1 is choosing the arena…') : T('Tunggu sebentar…', 'Please wait…')}</h2></div>`, 'dim ctlr', common);
       break;
+    case 'tour': tourScreen(s); break;
     case 'fight':
       $('.over.cpause')?.remove();
       play(s);
@@ -217,6 +222,31 @@ function inScreen() {
     }
   }
 }
+
+/** Turnamen Online: lobi (pilih karakter) atau bracket dari host. */
+function tourScreen(s: any) {
+  if (s.ph === 'lobby') {
+    const ids: string[] = (Array.isArray(s.ids) ? s.ids : []).filter((id: unknown) => typeof id === 'string' && charOk(id)), pick = charOk(s.pick) ? s.pick : ids[0];
+    const list: [string, string][] = Array.isArray(s.list) ? s.list.slice(0, 16) : [];
+    const c = charById(pick || 'aqualis');
+    show(`${top()}<div class="cwait tlob" style="${elVar(c.elem)}"><h2>${T('Turnamen Online', 'Online Tournament')}</h2>
+      <p>${T('Pilih karakter, lalu tunggu host memulai turnamen.', 'Pick a fighter, then wait for the host to start.')}</p>
+      <div class="thumbs sm">${ids.map(id => { const x = charById(id); return `<button class="th ${id === pick ? 'sel' : ''}" data-a="pick" data-v="${id}" style="${elVar(x.elem)};background-image:url(${ctx.portraits[id]})" aria-label="${x.name}">${icon(x.elem)}</button>`; }).join('')}</div>
+      <p><b>${c.name}</b> ${etag(c.elem)}</p>
+      <label class="row" style="justify-content:center">${T('Namamu', 'Your name')} <input class="tname" maxlength="12" placeholder="${esc(String(s.dev ?? '').slice(0, 24))}" value="${esc(String(s.name ?? '').slice(0, 12))}"></label>
+      <p class="mut">${list.length} ${T('pemain di ruangan', 'players in the room')}: ${list.map(x => esc(String(x?.[0] ?? '').slice(0, 24))).join(', ')}</p></div>`, 'dim ctlr', {
+      ...common, pick: id => { link!.cmd('pick', id); scr = { ...s, pick: id }; inScreen(); },
+    });
+    // dikirim saat selesai mengetik (Enter / pindah fokus) agar layar tidak dirender ulang di tengah ketikan
+    $('.tname')?.addEventListener('change', e => link?.cmd('name', (e.target as HTMLInputElement).value));
+    return;
+  }
+  const v = validTour(s); if (!v) return;
+  const nx = nextMatch(v.rounds), me = link!.slot, mine = !!nx && (nx.a === me || nx.b === me);
+  const l = s.last && Number.isInteger(s.last.w) && Number.isInteger(s.last.l) ? `<p class="mut">${T('Laga terakhir', 'Last match')}: ${tourName(v, s.last.w)} ${T('menang', 'beat')} ${esc(String(s.last.sc ?? '').slice(0, 8))} ${T('atas', '')} ${tourName(v, s.last.l)}</p>` : '';
+  show(`${top()}${bracketHtml(v, ctx.portraits)}<div class="tinfo">${tourInfo(v, false)}${mine ? `<p style="color:var(--gold)"><b>${T('Giliranmu! Tunggu host memulai laga.', 'You\'re up! Wait for the host to start the match.')}</b></p>` : nx ? `<p class="mut">${T('Laga lain akan tampil di layar ini untuk ditonton.', 'Other matches appear on this screen to watch.')}</p>` : ''}${l}</div>`, 'dim ctlr', common);
+}
+const charOk = (id: unknown) => typeof id === 'string' && !!CHARS.find(c => c.id === id);
 
 // ---------- joystick + tombol ----------
 function padOn(id: string) {

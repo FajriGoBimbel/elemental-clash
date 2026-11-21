@@ -7,7 +7,9 @@ import { Stage } from './gfx/stage';
 import { FightView } from './gfx/fightview';
 import { Hud } from './ui/hud';
 import { Controls, KEYMAP } from './ui/input';
-import { Input, noInput } from './game/fighter';
+import { Input, noInput, type Fighter } from './game/fighter';
+import { bracket, champion, nextMatch, settle, TOUR_MAX, TOUR_MIN, type Rounds, type TMatch } from './game/tour';
+import { bracketHtml, tourInfo, type TourView } from './ui/bracket';
 import { HostRoom } from './net/room';
 import { Mirror, snapshot } from './net/sync';
 import { getSock } from './net/transport';
@@ -22,7 +24,7 @@ loadSave();
 const stage = new Stage(document.getElementById('gl') as HTMLCanvasElement);
 const portraits: Record<string, string> = {}, athumbs: Record<string, string> = {};
 const params = new URLSearchParams(location.search);
-type Mode = 'quick' | 'story' | 'training' | 'versus';
+type Mode = 'quick' | 'story' | 'training' | 'versus' | 'tour';
 const app = { mode: 'quick' as Mode, char: save.lastChar, opp: 'random', level: save.level, dummy: 'stand', arena: 'kuil', pure: false, storyIdx: 0 };
 interface Fight {
   m: Match; view: FightView; hud: Hud | null; bot: Bot | null; demo: Bot | null; paused: boolean; acc: number; started: boolean; oppId: string; arenaId: string; level: number;
@@ -76,13 +78,14 @@ function dailyGoal() {
   return { char: charById(save.chars[h % save.chars.length]), arena: arenaById(save.arenas[(h >>> 3) % save.arenas.length]) };
 }
 function menu() {
-  endFight(); vsClose(); if (idle) setIdle(false); sound.music('menu');
+  endFight(); vsClose(); tourClose(); if (idle) setIdle(false); sound.music('menu');
   const c = charById(save.lastChar), d = dailyGoal(); stage.showChar(c, .5); stage.showSpin = .3;
   show(`<header class="topbar"><div class="logo sm">Elemental<b>Clash</b></div><div class="row">${padBtn()}${coins()}</div></header>
     <nav class="mnav">
       <button class="btn pri" data-a="mode" data-v="quick" style="--el:#ffd166">${T('Pertandingan Cepat', 'Quick Match')}</button>
-      <button class="btn" data-a="mode" data-v="story">${T('Mode Cerita', 'Story Mode')}<small>${T('Turnamen', 'Tournament')}</small></button>
+      <button class="btn" data-a="mode" data-v="story">${T('Mode Cerita', 'Story Mode')}<small>${T('8 lawan + bos', '8 foes + boss')}</small></button>
       <button class="btn" data-a="versus">${T('Main Bareng', 'Versus')}<small>${T('2 pemain', '2 players')}</small></button>
+      <button class="btn" data-a="tour">${T('Turnamen', 'Tournament')}<small>${TOUR_MIN}–${TOUR_MAX} ${T('pemain', 'players')}</small></button>
       <button class="btn" data-a="mode" data-v="training">${T('Latihan', 'Training')}</button>
       <button class="btn" data-a="collection">${T('Koleksi', 'Collection')}</button>
       <button class="btn" data-a="settings">${T('Pengaturan', 'Settings')}</button>
@@ -92,7 +95,7 @@ function menu() {
       ${save.daily.done ? `<p class="done">${T('Selesai! Kembali lagi besok.', 'Done! Come back tomorrow.')}</p>` : `<p>${T(`Menangkan Pertandingan Cepat memakai <b>${d.char.name}</b> di <b>${tr(d.arena.name)}</b>.`, `Win a Quick Match as <b>${d.char.name}</b> in <b>${tr(d.arena.name)}</b>.`)} <span class="coins">+150</span></p>`}
     </aside>`, 'menu', {
     mode: v => { app.mode = v as Mode; select(save.lastChar); },
-    collection: () => collection(), settings: () => settings(), versus: () => vsMenu(), pad: () => padModal(),
+    collection: () => collection(), settings: () => settings(), versus: () => vsMenu(), tour: () => tourEnter(), pad: () => padModal(),
   });
 }
 
@@ -213,16 +216,16 @@ function story() {
 // ---------- pertarungan ----------
 function startFight(oppId: string, arenaId: string, level: number, p1Id = app.char) {
   endFight();
-  const V = app.mode === 'versus', p1 = charById(p1Id), p2 = charById(oppId), arena = arenaById(arenaId), training = app.mode === 'training';
+  const V = app.mode === 'versus', H = V || app.mode === 'tour', p1 = charById(p1Id), p2 = charById(oppId), arena = arenaById(arenaId), training = app.mode === 'training';
   const m = new Match({ p1, p2, arena, pure: app.mode === 'story' ? false : app.pure, training }); m.events.length = 0;
   ui.innerHTML = ''; stage.showSpin = 0;
-  const view = new FightView(stage, m), bot = V ? null : new Bot(BOT_LEVELS[level], !!p2.boss);
+  const view = new FightView(stage, m), bot = H ? null : new Bot(BOT_LEVELS[level], !!p2.boss);
   if (bot && training && app.dummy !== 'fight') bot.dummy = app.dummy;
   const F: Fight = fight = {
-    m, view, hud: null, bot, demo: params.has('demo') && !V ? new Bot(BOT_LEVELS[2]) : null, paused: false, acc: 0, started: false, oppId, arenaId, level,
+    m, view, hud: null, bot, demo: params.has('demo') && !H ? new Bot(BOT_LEVELS[2]) : null, paused: false, acc: 0, started: false, oppId, arenaId, level,
     ctls: [], ctlSlot: [], src: [], pauseBy: -1, pauseEl: null, dropSlot: -1,
   };
-  F.src = V ? [0, 1].map(i => () => vsInput(F, i))
+  F.src = V ? [0, 1].map(i => () => vsInput(F, i)) : H ? [0, 1].map(i => () => tourInput(F, i))
     : [() => F.demo ? F.demo.update(STEP, m.f[0], m.f[1], m) : padInput(F.ctls[0]?.read() ?? noInput()), () => bot!.update(STEP, m.f[1], m.f[0], m)];
   view.vsT = 2.2; view.onEvent = onFightEvent; sound.music(arena.id);
   vsBanner(p1, p2);
@@ -254,17 +257,24 @@ const guestApi = {
 function beginRound1() {
   const f = fight!; ui.innerHTML = '';
   f.hud = new Hud(ui, f.m, portraits); f.hud.pauseBtn.addEventListener('click', () => pause());
-  if (f.guest) { const g = f.guest; f.ctls = [new Controls(ui, f.m.f[g.slot].elem, { keys: KEYMAP.solo })]; f.ctlSlot = [g.slot]; }
+  if (f.guest) { const g = f.guest; if (g.slot >= 0) { f.ctls = [new Controls(ui, f.m.f[g.slot].elem, { keys: KEYMAP.solo })]; f.ctlSlot = [g.slot]; } }
   else if (app.mode === 'versus') vsControls(f);
+  else if (app.mode === 'tour') tourControls(f);
   else { f.ctls = [new Controls(ui, f.m.f[0].elem)]; f.ctlSlot = [0]; }
   f.ctls.forEach(c => c.onPause = () => pause());
   f.started = true; if (f.mirror) return; // 2 Layar: ronde & efek arena mengikuti snapshot host
   f.m.pt = 0; f.m.ev({ t: 'round', n: 1 });
   const a = f.m.arena; if (!f.m.pure && a.elem) setTimeout(() => fight === f && f.hud?.notice(`${tr(a.name)}: ${tr(a.effect)}`, hex(ELEMS[a.elem!].col), 3.5), 1800);
 }
+/** Emote ketawa: tulisan "HAHA" bermunculan di atas kepala selama emote masih berjalan. */
+function laughFx(fi: Fighter, n = 0) {
+  const f = fight; if (!f?.hud || fi.state !== 'emote' || n > 6) return;
+  const [x, y] = stage.project(fi.x + (Math.random() - .5) * .8, fi.y + 2.05); f.hud.laugh(x, y, n);
+  setTimeout(() => fight === f && laughFx(fi, n + 1), 330);
+}
 function onFightEvent(e: Ev) {
   const f = fight; if (!f) return; const hud = f.hud, m = f.m;
-  if (vs?.cfg === 'D' && !f.mirror) vs.evq.push(e); // diteruskan ke layar kedua bersama snapshot
+  if (!f.mirror) { if (vs?.cfg === 'D') vs.evq.push(e); else if (app.mode === 'tour' && tour?.room) tour.evq.push(e); } // diteruskan ke layar lain bersama snapshot
   switch (e.t) {
     case 'round': hud?.msg(m.wins[0] === 1 && m.wins[1] === 1 ? T('Ronde Penentu', 'Final Round') : T('Ronde ', 'Round ') + e.n, m.training ? T('Latihan bebas', 'Free training') : '', 1.3); sound.round(); break;
     case 'fight': hud?.msg(T('Bertarung!', 'Fight!'), '', .8, '#ff5a1f'); sound.fight(); break;
@@ -288,8 +298,9 @@ function onFightEvent(e: Ev) {
     case 'elemShift': hud?.notice(`Omnis → ${tr(ELEMS[e.f.elem as keyof typeof ELEMS].name)}`, hex(ELEMS[e.f.elem as keyof typeof ELEMS].col), 2.5); sound.elem(e.f.elem, 1); break;
     case 'ko': sound.ko(); vibrate(120); hud?.msg('K.O.', '', 1.6, '#ff5b5b'); break;
     case 'roundEnd': if (e.reason === 'time') hud?.msg(e.winner < 0 ? T('Seri', 'Draw') : T('Waktu Habis', 'Time Up'), e.winner < 0 ? T('Ronde diulang', 'Round replayed') : '', 1.6); else if (e.reason === 'ring') { hud?.msg('Ring Out!', '', 1.6, '#6fe3b8'); sound.ko(); } break;
-    case 'matchEnd': f.ctls.forEach(c => c.enabled = false); if (f.mirror) break; setTimeout(() => fight === f && (app.mode === 'versus' ? vsResult(e.winner) : result(e.winner === 0)), 900); break;
+    case 'matchEnd': f.ctls.forEach(c => c.enabled = false); if (f.mirror) break; setTimeout(() => fight === f && (app.mode === 'versus' ? vsResult(e.winner) : app.mode === 'tour' ? tourResult(e.winner) : result(e.winner === 0)), 900); break;
     case 'charged': sound.elem(e.f.elem, .8); break;
+    case 'emote': if (e.f.emo === 4) laughFx(e.f); break;
     case 'jump': sound.jump(); break; case 'land': sound.land(e.slam); break; case 'dash': sound.dash(); break; case 'heal': sound.heal(); break;
     case 'pillarBreak': sound.boom(); hud?.notice(T('Pilar hancur!', 'Pillar destroyed!'), '#e0b955', 1.4); break;
   }
@@ -315,19 +326,21 @@ function pause(by = -1) {
   const f = fight; if (!f || f.paused || !f.started || f.m.phase === 'over') return;
   f.paused = true; f.pauseBy = by; sound.back();
   if (app.mode === 'versus') return vsPauseModal();
+  if (app.mode === 'tour') tourSync();
   const c = f.m.f[0].def, tr_ = f.m.training;
   const o = modal(`<h2>${T('Jeda', 'Paused')}</h2><p class="mut">${c.name} · ${T('Daftar jurus', 'Move list')}</p>${movesHtml(c)}
     ${tr_ ? `<div class="srow"><span>${T('Perilaku lawan', 'Dummy behavior')}</span><div class="seg">${[['stand', T('Diam', 'Stand')], ['block', T('Tangkis', 'Block')], ['fight', T('Melawan', 'Fight')]].map(d => `<button data-a="dummy" data-v="${d[0]}" class="${app.dummy === d[0] ? 'on' : ''}">${d[1]}</button>`).join('')}</div></div>` : ''}
     <div class="mbtns"><button class="btn pri" data-a="resume">${T('Lanjutkan', 'Resume')}</button><button class="btn" data-a="restart">${T('Ulangi', 'Restart')}</button><button class="btn" data-a="quit">${T('Keluar', 'Quit')}</button></div>`, {
     resume: () => soloResume(),
     dummy: (v, el) => { app.dummy = v; f.bot.dummy = v === 'fight' ? null : v; $$('.seg button', o).forEach(b => b.classList.toggle('on', b === el)); },
-    restart: () => startFight(f.oppId, f.arenaId, f.level), quit: () => menu(),
+    restart: () => app.mode === 'tour' ? tourPlay() : startFight(f.oppId, f.arenaId, f.level), quit: () => app.mode === 'tour' ? tourBracket() : menu(),
   });
   f.pauseEl = o;
 }
 function soloResume() {
   const f = fight; if (!f || !f.paused || app.mode === 'versus') return;
   f.pauseEl?.remove(); f.pauseEl = null; f.paused = false; pad?.input[0].release();
+  if (app.mode === 'tour' && tour?.room) { tour.room.input.forEach(x => x.release()); tourSync(); }
 }
 
 // ---------- hasil ----------
@@ -469,6 +482,7 @@ function vsMenu() {
       ${card('B', T('Layar + 1 Kontroler', 'Screen + 1 Controller'), T('Pemain 1 sentuh di layar ini, Pemain 2 memakai HP-nya sebagai joystick.', 'Player 1 uses touch here, Player 2 uses their phone as a gamepad.'), T('2 perangkat', '2 devices'), true)}
       ${card('C', T('Layar + 2 Kontroler', 'Screen + 2 Controllers'), T('Kedua pemain memakai HP masing-masing; layar ini hanya menampilkan pertarungan.', 'Both players use their own phones; this screen only shows the fight.'), T('3 perangkat · tablet atau TV', '3 devices · tablet or TV'), true)}
       ${card('D', T('2 Layar', 'Two Screens'), T('Tiap pemain di perangkat & layarnya sendiri, mis. desktop lawan desktop. Pemain 2 gabung dengan kode.', 'Each player on their own device and screen, e.g. desktop vs desktop. Player 2 joins with the code.'), T('2 perangkat · 2 layar', '2 devices · 2 screens'), true)}
+      <button class="vcard" data-a="tour" ${lan ? '' : 'disabled'}><span class="dev">${'<i></i>'.repeat(4)}</span><h3>${T('Turnamen', 'Tournament')}</h3><p>${T('Bracket sistem gugur. Tiap pemain bergabung dengan kode ruangan dan bermain di perangkatnya sendiri.', 'Knockout bracket. Each player joins with the room code and plays on their own device.')}</p><small>${TOUR_MIN}–${TOUR_MAX} ${T('pemain · tiap pemain 1 perangkat', 'players · one device each')}</small></button>
       <button class="vcard join" data-a="join" ${lan ? '' : 'disabled'}><span class="dev pad">${SVG_PAD}</span><h3>${T('Gabung dengan Kode', 'Join with Code')}</h3><p>${T('Masukkan kode ruangan dari layar host. Perangkat ini jadi kontroler, atau layar Pemain 2 di mode 2 Layar.', 'Enter the room code from the host. This device becomes a gamepad, or Player 2\'s screen in Two Screens mode.')}</p><small>${T('Perangkat ini', 'This device')}</small></button>
     </div>
     <p class="vnote ${lan ? '' : 'warn'}">${lan
@@ -477,7 +491,7 @@ function vsMenu() {
         : T('Semua perangkat harus di Wi-Fi yang sama, atau sambungkan ke hotspot salah satu HP. Kuota internet tidak terpakai.', 'All devices must share one Wi-Fi network, or join one phone\'s hotspot. No mobile data is used.') + (sock!.kind !== 'native' ? ` <span class="mut">(${sock!.kind === 'relay' ? T('mode uji: relay server dev', 'test mode: dev server relay') : T('mode uji: antar-tab', 'test mode: between tabs')})</span>` : '')
       : T('Kontroler HP membutuhkan aplikasi Android Elemental Clash; versi browser tidak bisa membuka jaringan lokal. Mode Satu Layar tetap bisa dimainkan.', 'Phone controllers need the Elemental Clash Android app; the browser version cannot open local network sockets. One Screen mode still works.')}</p>
     <div class="foot"><button class="btn" data-a="back">${T('Kembali', 'Back')}</button></div>`, 'dim', {
-    cfg: v => vsStart(v as Cfg), back: () => menu(),
+    cfg: v => vsStart(v as Cfg), back: () => menu(), tour: () => tourEnter(vsMenu),
     join: () => joinCtl(),
   });
 }
@@ -571,9 +585,13 @@ function vsGo(same = false) {
   if (!same) v.arenaId = app.arena === 'random' ? save.arenas[Math.floor(Math.random() * save.arenas.length)] : app.arena;
   startFight(v.picks[1], v.arenaId, 1, v.picks[0]); vsSync();
 }
+/** Satu layar untuk dua pemain: kontrol sentuh dibagi kiri/kanan, keyboard WASD vs panah. */
+function splitControls(f: Fight) {
+  const m = f.m; f.ctls = [new Controls(ui, m.f[0].elem, { side: 'l', keys: KEYMAP.p1 }), new Controls(ui, m.f[1].elem, { side: 'r', keys: KEYMAP.p2 })]; f.ctlSlot = [0, 1];
+}
 function vsControls(f: Fight) {
   const v = vs!, m = f.m;
-  if (v.cfg === 'A') { f.ctls = [new Controls(ui, m.f[0].elem, { side: 'l', keys: KEYMAP.p1 }), new Controls(ui, m.f[1].elem, { side: 'r', keys: KEYMAP.p2 })]; f.ctlSlot = [0, 1]; }
+  if (v.cfg === 'A') splitControls(f);
   else if (v.cfg === 'B' || v.cfg === 'D') { f.ctls = [new Controls(ui, m.f[0].elem)]; f.ctlSlot = [0]; }
   else { f.ctls = []; f.ctlSlot = []; f.hud!.el.classList.add('big'); }
   if (v.room) f.hud!.el.insertAdjacentHTML('beforeend', `<div class="vsig">${[0, 1].map(i => `<span class="p${i + 1}">${remote(i) ? `<span data-sig="${i}">${sigIcon(v.room!.sig(i))}</span>` : ''}</span>`).join('')}</div>`);
@@ -715,7 +733,7 @@ const soloPad = () => padUp() && app.mode !== 'versus' && !!fight && !fight.gues
 function padInput(a: Input): Input {
   if (!padUp() || app.mode === 'versus') return a;
   const b = pad!.input[0].read();
-  return { mx: Math.abs(a.mx) >= Math.abs(b.mx) ? a.mx : b.mx, up: a.up || b.up, down: a.down || b.down, atk: a.atk || b.atk, hvy: a.hvy || b.hvy, s1: a.s1 || b.s1, s2: a.s2 || b.s2, block: a.block || b.block, dash: a.dash || b.dash, ult: a.ult || b.ult };
+  return { mx: Math.abs(a.mx) >= Math.abs(b.mx) ? a.mx : b.mx, up: a.up || b.up, down: a.down || b.down, atk: a.atk || b.atk, hvy: a.hvy || b.hvy, s1: a.s1 || b.s1, atkHold: a.atkHold || b.atkHold, hvyHold: a.hvyHold || b.hvyHold, block: a.block || b.block, dash: a.dash || b.dash, ult: a.ult || b.ult, emote: a.emote || b.emote };
 }
 function padOpen(): Promise<boolean> {
   if (pad) return Promise.resolve(true);
@@ -810,7 +828,7 @@ function frame(now: number) {
     }
     f.view.update(rdt, rdt);
   }
-  if (f) vsFeedback(now);
+  if (f) { vsFeedback(now); tourFeedback(now); }
   if (pad) padTick(now);
   if (!idle) stage.render(f && f.paused ? 0 : rdt);
 }
@@ -821,4 +839,186 @@ applySettings();
 initScreen();
 requestAnimationFrame(frame);
 splash();
-(window as any).__ec = { app, save, stage, startFight, menu, select, opponent, arenaScreen, story, settings, collection, result, vsMenu, get fight() { return fight; }, get vs() { return vs; } };
+(window as any).__ec = { app, save, stage, startFight, menu, select, opponent, arenaScreen, story, settings, collection, result, vsMenu, get fight() { return fight; }, get vs() { return vs; }, get tour() { return tour; } };
+
+// ---------- turnamen (sistem gugur) ----------
+// Tiap peserta main di perangkatnya sendiri dan masuk ruangan dengan kode (tanpa layar terbagi). Host = peserta 0 dan menjalankan simulasi;
+// perangkat lain menerima snapshot (seperti mode 2 Layar), mengendalikan petarungnya sendiri, atau menonton.
+// shortcut: bracket hanya disimpan di memori (hilang bila aplikasi/ruangan ditutup), simpan ke save bila turnamen panjang perlu dilanjutkan.
+interface Tour {
+  n: number; names: string[]; chars: string[]; rounds: Rounds | null; cur: TMatch | null;
+  room: HostRoom | null; evq: Ev[]; ssT: number; mid: number; timer: number; last: { w: number; l: number; sc: string } | null;
+}
+let tour: Tour | null = null;
+const TOUR_SLOTS = Array.from({ length: TOUR_MAX - 1 }, (_, i) => i + 1);
+const tname = (i: number) => esc(tour!.names[i] || pname(i));
+const tview = (): TourView => ({ rounds: tour!.rounds!, names: tour!.names, chars: tour!.chars });
+/** peserta Turnamen Online yang ada di ruangan: host (0) + perangkat yang bergabung */
+const tourIds = () => [0, ...TOUR_SLOTS.filter(i => tour!.room!.peers[i])];
+let tourBack = vsMenu;
+function tourEnter(back = menu) {
+  tourBack = back;
+  if (tour?.room) return tour.rounds ? tourBracket() : tourLobby();
+  tourOnline();
+}
+function tourClose() { const t = tour; if (!t?.room) return; t.room.close(); clearInterval(t.timer); t.room = null; t.rounds = null; t.cur = null; }
+const cleanName = (v: unknown) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, 12);
+/** nama peserta online: isian sendiri, bila kosong nama perangkat */
+const onName = (i: number) => tour!.names[i] || (i ? tour!.room?.peers[i]?.name : tour!.room?.hostName) || pname(i);
+function shuffled<X>(a: X[]) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+// ----- ruangan turnamen -----
+async function tourOnline() {
+  const sock = getSock();
+  if (!sock) return toast(T('Turnamen butuh jaringan: tiap pemain bergabung dari perangkatnya sendiri dengan kode ruangan.', 'Tournaments need a network: each player joins from their own device with the room code.'));
+  endFight(); vsClose();
+  const t = tour ??= { n: 0, names: Array(TOUR_MAX).fill(''), chars: Array.from({ length: TOUR_MAX }, () => save.lastChar), rounds: null, cur: null, room: null, evq: [], ssT: 0, mid: 0, timer: 0, last: null };
+  if (!t.room) {
+    const room = new HostRoom(sock, TOUR_SLOTS, await sock.name());
+    try { await room.open(); } catch {
+      toast(sock.kind === 'web' ? T('Gagal membuka ruangan. Periksa koneksi internet lalu coba lagi.', 'Could not open the room. Check the internet connection and try again.')
+        : T('Gagal membuka ruangan. Pastikan Wi-Fi atau hotspot menyala, lalu coba lagi.', 'Could not open the room. Make sure Wi-Fi or hotspot is on, then try again.')); return tourBack();
+    }
+    if (tour !== t) { room.close(); return; }
+    t.room = room; t.rounds = null; t.cur = null; t.last = null; t.names = Array(TOUR_MAX).fill('');
+    room.onChange = () => {
+      if (tour !== t || t.room !== room) return;
+      if (t.rounds) for (const q of room.reqs) room.approve(q.conn, false); // turnamen sudah berjalan: peserta baru ditolak
+      if (!t.rounds) tourLobby(); else if (!fight) tourBracket(); else tourSync();
+    };
+    room.onJoin = s => { t.names[s] = ''; sound.confirm(); };
+    room.onCmd = tourCmd; room.onDrop = tourDrop;
+    room.onBack = s => { toast(`${tname(s)} ${T('tersambung kembali', 'reconnected')}`); tourSync(); };
+    t.timer = setInterval(() => { // di lobi, perangkat yang terputus >15 dtk dilepas agar slotnya kosong lagi
+      if (t.room !== room || t.rounds) return;
+      for (const i of TOUR_SLOTS) { const p = room.peers[i]; if (p && !p.up && performance.now() - p.dropAt > RECONNECT_WAIT) room.kick(i); }
+    }, 1000) as unknown as number;
+  }
+  tourLobby();
+}
+function tourLobby() {
+  const t = tour!, r = t.room!; endFight(); sound.music('menu'); stage.clear();
+  const ids = tourIds();
+  for (const i of ids) if (!save.chars.includes(t.chars[i])) t.chars[i] = save.chars[0];
+  const row = (i: number) => {
+    const p = i ? r.peers[i] : null, c = charById(t.chars[i]), por = `style="background-image:url(${portraits[c.id]})"`;
+    return `<div class="tp" style="${elVar(c.elem)}">${i === 0 ? `<button class="th" data-a="ch" ${por} aria-label="${T('Ganti karakter', 'Change fighter')}: ${c.name}">${icon(c.elem)}</button>` : `<div class="th" ${por}>${icon(c.elem)}</div>`}
+      <span class="tpn">${i === 0 ? `<input class="hname" maxlength="12" placeholder="${esc(r.hostName)}" aria-label="${T('Namamu', 'Your name')}" value="${esc(t.names[0])}">` : `<b>${esc(onName(i))}</b>`}<small class="mut">${i === 0 ? T('Kamu (host) · ketuk potret', 'You (host) · tap portrait') : p!.up ? c.name : T('Terputus…', 'Reconnecting…')}</small></span></div>`;
+  };
+  show(`<div class="title"><h2>${T('Turnamen Online', 'Online Tournament')}</h2><span class="mut">${ids.length}/${TOUR_MAX} ${T('pemain · tiap peserta di perangkatnya sendiri', 'players · each on their own device')}</span></div>
+    <div class="lobby"><div class="panel codebox"><span class="mut">${T('Kode ruangan', 'Room code')}</span>
+      <div class="code" aria-label="${[...r.code].join(' ')}">${[...r.code].map(c => `<b>${c}</b>`).join('')}</div>
+      <div class="row">${joinLink(r.code) ? `<button class="btn sm pri" data-a="share">${T('Bagikan link / QR', 'Share link / QR')}</button>` : ''}<button class="btn sm" data-a="regen">${T('Buat ulang kode', 'New code')}</button></div>
+      <ol class="steps"><li>${T('Di perangkat lain buka game ini → <b>Main Bareng → Gabung dengan Kode</b>', 'On the other device open this game → <b>Versus → Join with Code</b>')}</li><li>${T('Masukkan kode di atas', 'Enter the code above')}</li><li>${T('Izinkan permintaannya di layar ini', 'Approve the request on this screen')}</li><li>${T('Peserta memilih karakter di perangkatnya', 'Players pick a fighter on their device')}</li></ol></div>
+      <div class="tplayers">${ids.map(row).join('')}</div></div>
+    <div class="foot"><button class="btn" data-a="back">${T('Tutup Ruangan', 'Close Room')}</button><span class="mut">${ids.length < TOUR_MIN ? T(`Butuh minimal ${TOUR_MIN} pemain`, `Needs at least ${TOUR_MIN} players`) : T('Semua siap? Mulai turnamennya.', 'Everyone here? Start the tournament.')}</span>
+      <button class="btn pri" data-a="go" ${ids.length < TOUR_MIN ? 'disabled' : ''}>${T('Acak Bracket & Mulai', 'Shuffle Bracket & Start')}</button></div>`, 'dim', {
+    ch: () => { t.chars[0] = save.chars[(save.chars.indexOf(t.chars[0]) + 1) % save.chars.length]; tourLobby(); },
+    regen: () => r.regen(), share: () => shareModal(r.code, 'p2'), back: () => { tourClose(); tourBack(); },
+    go: () => {
+      const now = tourIds(); if (now.length < TOUR_MIN) return;
+      for (const i of now) t.names[i] = onName(i);
+      t.n = now.length; t.rounds = bracket(shuffled(now)); t.last = null; sound.confirm(); tourBracket();
+    },
+  });
+  $('.hname')?.addEventListener('change', e => { t.names[0] = cleanName((e.target as HTMLInputElement).value); tourSync(); });
+  const q = r.reqs[0];
+  if (q) modal(`<h2>${T('Permintaan bergabung', 'Join request')}</h2><p><b>${esc(q.name)}</b> ${T('ingin ikut turnamen.', 'wants to join the tournament.')}</p>
+    <div class="mbtns"><button class="btn pri" data-a="yes">${T('Izinkan', 'Allow')}</button><button class="btn" data-a="no">${T('Tolak', 'Deny')}</button></div>`, { yes: () => r.approve(q.conn, true), no: () => r.approve(q.conn, false) });
+  tourSync();
+}
+/** Layar yang sedang aktif dikirim ke tiap perangkat peserta. */
+function tourSync() {
+  const t = tour, r = t?.room; if (!t || !r) return;
+  const f = fight, cur = t.cur, live = !!(f && cur && app.mode === 'tour' && !f.mirror);
+  for (const i of TOUR_SLOTS) {
+    if (!r.peers[i]) continue;
+    let s: object;
+    if (!t.rounds) s = { s: 'tour', ph: 'lobby', ids: save.chars, pick: t.chars[i], list: tourIds().map(k => [onName(k), t.chars[k]]), name: t.names[i], dev: r.peers[i]!.name };
+    else if (live) {
+      const g = { cfg: 'D', p: [t.chars[cur!.a], t.chars[cur!.b]], a: f!.arenaId, pure: app.pure, mid: t.mid, side: cur!.a === i ? 0 : cur!.b === i ? 1 : -1 };
+      s = f!.paused ? { s: 'pause', by: f!.pauseBy, drop: -1, ...g } : { s: 'fight', ...g };
+    } else s = { s: 'tour', ph: 'br', rounds: t.rounds, names: t.names, chars: t.chars, last: t.last, me: i };
+    r.send(i, { t: 'scr', slot: i, ...s });
+  }
+}
+/** Snapshot pertarungan untuk semua perangkat peserta (±66×/dtk). */
+function tourFeedback(now: number) {
+  const t = tour, f = fight; if (!t?.room || !f || f.mirror || app.mode !== 'tour' || !t.cur || now - t.ssT < 15) return;
+  t.ssT = now; t.room.stateAll(snapshot(f.m, t.evq.splice(0)));
+}
+function tourCmd(slot: number, m: { a: string; v?: any }) {
+  const t = tour; if (!t?.room) return;
+  if (m.a === 'leave') { t.room.kick(slot); toast(`${tname(slot)} ${T('keluar dari ruangan', 'left the room')}`); return; }
+  if (!t.rounds) {
+    if (m.a === 'pick' && save.chars.includes(m.v)) { t.chars[slot] = m.v; tourLobby(); }
+    else if (m.a === 'name') { t.names[slot] = cleanName(m.v); tourLobby(); }
+    return;
+  }
+  const f = fight, cur = t.cur; if (!f || !cur || (cur.a !== slot && cur.b !== slot)) return;
+  if (m.a === 'pause') pause(slot); else if (m.a === 'resume' && f.paused && f.pauseBy === slot) soloResume();
+}
+function tourDrop(slot: number) {
+  const t = tour!, f = fight, cur = t.cur;
+  toast(`${tname(slot)} ${T('terputus — menunggu sambung ulang', 'disconnected — waiting to reconnect')}`);
+  if (f && cur && (cur.a === slot || cur.b === slot) && f.m.phase !== 'over' && !f.paused) pause(slot);
+}
+/** Input petarung kiri (0) / kanan (1): perangkat peserta (online) atau kontrol di layar ini. */
+function tourInput(f: Fight, side: number): Input {
+  const t = tour, cur = t?.cur;
+  if (t?.room && cur) { const p = side ? cur.b : cur.a; if (p > 0) return t.room.input[p]?.read() ?? noInput(); }
+  const k = f.ctlSlot.indexOf(side); return f.ctls[k]?.read() ?? noInput();
+}
+function tourControls(f: Fight) {
+  const t = tour, cur = t?.cur; f.ctls = []; f.ctlSlot = []; if (!t?.room) return;
+  const side: number = cur?.a === 0 ? 0 : cur?.b === 0 ? 1 : -1; // host bukan peserta laga ini: hanya menonton
+  if (side >= 0) { f.ctls = [new Controls(ui, f.m.f[side].elem, { keys: KEYMAP.solo })]; f.ctlSlot = [side]; } else { f.ctls = []; f.ctlSlot = []; }
+}
+
+// ----- bracket, laga, hasil (dipakai kedua mode) -----
+function tourBracket() {
+  endFight(); sound.music('menu'); stage.clear();
+  const t = tour!, rs = t.rounds!, nx = nextMatch(rs), ch = champion(rs), on = !!t.room;
+  const miss = on && nx ? [nx.a, nx.b].filter(p => p > 0 && !t.room!.ready(p)) : [];
+  const last = t.last ? `<p class="mut">${T('Laga terakhir', 'Last match')}: ${tname(t.last.w)} ${T('menang', 'beat')} ${t.last.sc} ${T('atas', '')} ${tname(t.last.l)}</p>` : '';
+  const info = tourInfo(tview(), !on) + (miss.length ? `<p class="bad">${miss.map(tname).join(', ')} ${T('belum tersambung', 'not connected')}</p>` : last);
+  show(`<div class="title"><h2>${on ? T('Turnamen Online', 'Online Tournament') : T('Turnamen', 'Tournament')}</h2><span class="mut">${t.n} ${T('pemain', 'players')}${on ? ` · ${T('kode', 'code')} ${t.room!.code}` : ''}</span></div>
+    ${bracketHtml(tview(), portraits)}
+    <div class="foot"><button class="btn" data-a="quit">${ch >= 0 ? 'Menu' : T('Keluar', 'Quit')}</button><div class="tinfo">${info}</div>
+      ${ch >= 0 ? `<button class="btn pri" data-a="anew">${T('Turnamen Baru', 'New Tournament')}</button>`
+      : `${miss.length ? `<button class="btn" data-a="wo">${T('Menang WO', 'Walkover')}</button>` : ''}<button class="btn pri" data-a="play" ${miss.length ? 'disabled' : ''}>${T('Mulai Laga', 'Start Match')}</button>`}</div>`, 'dim', {
+    play: () => tourPlay(),
+    wo: () => { if (!nx) return; const w = miss.includes(nx.a) ? (miss.includes(nx.b) ? nx.a : nx.b) : nx.a; nx.w = w; t.last = { w, l: w === nx.a ? nx.b : nx.a, sc: 'WO' }; settle(rs); tourBracket(); },
+    anew: () => { t.rounds = null; t.cur = null; t.last = null; tourLobby(); },
+    quit: () => {
+      if (ch >= 0) { tourClose(); tour = null; return menu(); }
+      const o = modal(`<h2>${T('Keluar turnamen?', 'Quit tournament?')}</h2><p>${on ? T('Ruangan ditutup dan turnamen online berakhir.', 'The room closes and the online tournament ends.') : T('Bracket tetap tersimpan selama aplikasi belum ditutup.', 'The bracket is kept until the app is closed.')}</p>
+        <div class="mbtns"><button class="btn pri" data-a="yes">${T('Keluar', 'Quit')}</button><button class="btn" data-a="no">${T('Batal', 'Cancel')}</button></div>`, { yes: () => { o.remove(); tourClose(); menu(); }, no: () => o.remove() });
+    },
+  });
+  tourSync();
+}
+function tourPlay() {
+  const t = tour!, m = t.cur = nextMatch(t.rounds!); if (!m) return tourBracket();
+  if (t.room && [m.a, m.b].some(p => p > 0 && !t.room!.ready(p))) return tourBracket();
+  app.mode = 'tour'; t.mid++; t.evq = []; sound.confirm();
+  startFight(t.chars[m.b], save.arenas[Math.floor(Math.random() * save.arenas.length)], 1, t.chars[m.a]);
+  tourSync();
+}
+function tourResult(winner: number) {
+  const f = fight, t = tour, m = t?.cur; if (!f || !t || !m) return;
+  f.hud?.destroy(); f.ctls.forEach(c => c.destroy()); f.hud = null; f.ctls = []; f.ctlSlot = [];
+  const fm = f.m, score = `${tname(m.a)} ${fm.wins[0]} – ${fm.wins[1]} ${tname(m.b)} · ${tr(fm.arena.name)}`;
+  if (winner >= 0) {
+    m.w = winner === 0 ? m.a : m.b; settle(t.rounds!); t.cur = null;
+    t.last = { w: m.w, l: winner === 0 ? m.b : m.a, sc: `${Math.max(...fm.wins)}–${Math.min(...fm.wins)}` };
+  }
+  const ch = champion(t.rounds!); sound.win();
+  const col = winner < 0 ? '#ffd166' : hex(ELEMS[fm.f[winner].def.elem].col);
+  ui.innerHTML = `<div class="panel result" style="--el:${col}"><h1>${winner < 0 ? T('Seri', 'Draw') : ch >= 0 ? '🏆 ' + tname(ch) : tname(m.w) + T(' Menang!', ' Wins!')}</h1>
+    <p class="mut">${ch >= 0 ? T('Juara Turnamen!', 'Tournament Champion!') + ' · ' : ''}${score}</p>
+    ${winner < 0 ? `<p>${T('Turnamen butuh pemenang, laga diulang.', 'A tournament needs a winner, so the match is replayed.')}</p>` : ''}
+    <div class="row" style="flex-wrap:wrap">${winner < 0 ? `<button class="btn pri" data-a="again">${T('Ulang Laga', 'Replay Match')}</button>` : `<button class="btn pri" data-a="br">${T('Lihat Bracket', 'View Bracket')}</button>`}</div></div>`;
+  bind(ui.firstElementChild as HTMLElement, { again: () => tourPlay(), br: () => tourBracket() });
+  tourSync();
+}

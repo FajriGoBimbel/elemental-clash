@@ -114,7 +114,44 @@ function lerpPts(u: number, pts: [number, number][]) {
   for (let i = 1; i < pts.length; i++) if (u <= pts[i][0]) { const [u0, v0] = pts[i - 1], [u1, v1] = pts[i]; return v0 + (v1 - v0) * (u - u0) / (u1 - u0); }
   return pts[pts.length - 1][1];
 }
-export interface AnimCtx { state: string; anim?: string; u: number; st: number; t: number; vy: number; walkPh: number; back: boolean; landed: boolean; alt: boolean }
+export interface AnimCtx { state: string; anim?: string; u: number; st: number; t: number; vy: number; walkPh: number; back: boolean; landed: boolean; alt: boolean; emo?: number }
+/** Pose emote ejekan (nomor = indeks EMOTES + 1); st = detik sejak emote mulai. */
+function emotePose(id: number, st: number, out: Pose) {
+  out.set(POSES.show);
+  switch (id) {
+    case 2: { // "ayo sini": tangan kanan menjulur dan jari melambai memanggil, tangan kiri di pinggang
+      const k = Math.max(0, Math.sin(st * 9));
+      out[0] = k * .01; out[3] = 3; out[7] = -6; out[8] = -8; out[1] = -4;
+      out[9] = -12; out[10] = 42; out[11] = 100; out[12] = 55; out[13] = 55; out[14] = 15 + k * 85;
+      out[17] = 10; out[20] = 10; return;
+    }
+    case 3: { // pamer otot: double biceps berdenyut, dada membusung, badan menoleh kiri-kanan
+      const k = Math.max(0, Math.sin(st * 6)), side = Math.sin(st * 2.6);
+      out[0] = k * .012; out[1] = -2; out[5] = -6; out[6] = side * 14; out[7] = -4;
+      out[9] = 90; out[10] = 88; out[11] = 100 + k * 25; out[12] = 90; out[13] = 88; out[14] = 100 + k * 25;
+      out[17] = 14; out[20] = 14; out[16] = 14; out[19] = 14; return;
+    }
+    case 4: { // ketawa ngejek: kedua tangan di pinggang, kepala mendongak, badan terguncang tertawa
+      const k = Math.sin(st * 22);
+      out[0] = Math.abs(k) * .015; out[1] = -14 + k * 2; out[5] = k * 3; out[7] = -22 + k * 3; out[3] = Math.sin(st * 3) * 8;
+      out[9] = -12; out[10] = 42 + k * 3; out[11] = 100; out[12] = -12; out[13] = 42 - k * 3; out[14] = 100;
+      out[16] = 12; out[19] = 12; return;
+    }
+    default: { // joget gemoy (referensi video): fase 1 lengan terentang melambai bergantian, fase 2 kepalan dipompa di depan dada
+      const ph = st * 7, w = Math.sin(ph), v = Math.cos(ph * 2), up = Math.max(0, w), dn = Math.max(0, -w);
+      out[0] = Math.abs(v) * .03; out[3] = w * 6; out[8] = -w * 10; out[17] = 12; out[20] = 12;
+      if (st < 1.8) {
+        out[1] = -3; out[6] = w * 8; out[7] = -6;
+        out[9] = 25; out[10] = 80 + w * 28; out[11] = 30 + dn * 25; out[12] = 25; out[13] = 80 - w * 28; out[14] = 30 + up * 25;
+        out[15] = 10 + up * 8; out[16] = 14 + up * 14; out[18] = -8 + dn * 8; out[19] = 14 + dn * 14;
+      } else {
+        out[1] = 10; out[6] = w * 18; out[7] = -2 + v * 5;
+        out[9] = 20 + up * 32; out[10] = 50 - up * 10; out[11] = 80 + up * 40; out[12] = 20 + dn * 32; out[13] = 50 - dn * 10; out[14] = 80 + dn * 40;
+        out[15] = 22 + up * 10; out[16] = 34 + up * 16; out[18] = -4 + dn * 10; out[19] = 34 + dn * 16;
+      }
+    }
+  }
+}
 /** Menghitung pose target untuk state petarung. */
 export function poseFor(c: AnimCtx, out: Pose) {
   const t = c.t;
@@ -140,6 +177,7 @@ export function poseFor(c: AnimCtx, out: Pose) {
     case 'getup': seq(c.st, [[0, POSES.lie], [.3, POSES.crouch]], out); return;
     case 'win': out.set(POSES.win); out[0] = Math.abs(Math.sin(t * 5)) * .06; out[12] = 172 + Math.sin(t * 10) * 6; return;
     case 'lose': out.set(POSES.lose); return;
+    case 'emote': emotePose(c.emo || 1, c.st, out); return;
     case 'fall': out.set(POSES.fall); out[9] = 150 + Math.sin(t * 22) * 30; out[12] = 130 - Math.sin(t * 22) * 30; return;
     case 'show': out.set(POSES.show); out[0] = Math.sin(t * 2) * .008; out[5] = Math.sin(t * 2) * 1.5; out[11] = 22 + Math.sin(t * 2) * 3; return;
     default: {

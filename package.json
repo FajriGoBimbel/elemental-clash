@@ -14,7 +14,9 @@
     "test:mp": "node scripts/mp-e2e.mjs",
     "test:mp2": "node scripts/mp2-e2e.mjs",
     "test:pad": "node scripts/pad-e2e.mjs",
-    "test:share": "node scripts/share-e2e.mjs"
+    "test:share": "node scripts/share-e2e.mjs",
+    "test:tour": "tsx scripts/tourtest.ts",
+    "test:tour-online": "node scripts/tour-e2e.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

@@ -1,9 +1,9 @@
-import type { CharDef, Move, Elem } from '../data';
+import { EMOTES, type CharDef, type Move, type Elem } from '../data';
 import type { Match } from './match';
 
-export interface Input { mx: number; up: boolean; down: boolean; atk: boolean; hvy: boolean; s1: boolean; block: boolean; dash: boolean; ult: boolean; atkHold: boolean; hvyHold: boolean }
-export const noInput = (): Input => ({ mx: 0, up: false, down: false, atk: false, hvy: false, s1: false, block: false, dash: false, ult: false, atkHold: false, hvyHold: false });
-export type State = 'idle' | 'walk' | 'crouch' | 'jump' | 'attack' | 'block' | 'dash' | 'hit' | 'down' | 'getup' | 'ko' | 'win' | 'fall';
+export interface Input { mx: number; up: boolean; down: boolean; atk: boolean; hvy: boolean; s1: boolean; block: boolean; dash: boolean; ult: boolean; /** nomor emote yang dipilih (0 = tidak ada) */ emote: number; atkHold: boolean; hvyHold: boolean }
+export const noInput = (): Input => ({ mx: 0, up: false, down: false, atk: false, hvy: false, s1: false, block: false, dash: false, ult: false, emote: 0, atkHold: false, hvyHold: false });
+export type State = 'idle' | 'walk' | 'crouch' | 'jump' | 'attack' | 'block' | 'dash' | 'hit' | 'down' | 'getup' | 'ko' | 'win' | 'fall' | 'emote';
 
 const G = 32;
 export const MAX_STAM = 3;
@@ -16,9 +16,9 @@ export class Fighter {
   state: State = 'idle'; st = 0;
   move: Move | null = null; mt = 0; su = 0; ac = 0; re = 0; hitDone = false; spawned = false; multiT = 0; seq = 0;
   cd1 = 0; cd2 = 0; burn = 0; burnTick = 0; slow = 0; root = 0; inv = 0; lock = 0; stunT = 0;
-  landed = false; airUsed = false; dashDir = 1; comboN = 0; hitSeq = 0; chargeT = 0;
+  emo = 1; landed = false; airUsed = false; dashDir = 1; comboN = 0; hitSeq = 0; chargeT = 0;
   elem: Elem;
-  private buf = { atk: 0, hvy: 0, s1: 0, dash: 0, ult: 0 };
+  private buf = { atk: 0, hvy: 0, s1: 0, dash: 0, ult: 0, emote: 0 };
 
   constructor(public def: CharDef, public idx: number) { this.elem = def.elem; this.hp = def.hp; }
 
@@ -26,7 +26,7 @@ export class Fighter {
     this.x = x; this.y = 0; this.vx = this.vy = this.push = 0; this.face = face; this.hp = this.def.hp;
     this.stam = MAX_STAM; this.stamWait = 0; this.state = 'idle'; this.st = 0; this.move = null;
     this.cd1 = this.cd2 = this.burn = this.slow = this.root = this.inv = this.lock = 0; this.comboN = 0;
-    this.buf = { atk: 0, hvy: 0, s1: 0, dash: 0, ult: 0 };
+    this.buf = { atk: 0, hvy: 0, s1: 0, dash: 0, ult: 0, emote: 0 };
   }
   get grounded() { return this.y <= 0.001; }
   get actionable() { return this.state === 'idle' || this.state === 'walk' || this.state === 'crouch' || (this.state === 'block' && this.lock <= 0); }
@@ -74,7 +74,7 @@ export class Fighter {
   }
 
   /** Menyimpan tombol sekali-tekan ke buffer tanpa menjalankan simulasi (dipakai saat hitstop). */
-  hold(inp: Input) { for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as const) if (inp[k]) this.buf[k] = .16; }
+  hold(inp: Input) { if (inp.emote) this.emo = inp.emote; for (const k of ['atk', 'hvy', 's1', 'dash', 'ult', 'emote'] as const) if (inp[k]) this.buf[k] = .16; }
 
   update(dt: number, inp: Input, opp: Fighter, m: Match) {
     const d = this.def, b = this.buf;
@@ -87,15 +87,22 @@ export class Fighter {
     }
     if (d.regen && this.alive && this.hp > 0) this.hp = Math.min(d.hp, this.hp + d.hp * d.regen * dt);
     if (this.stamWait > 0) this.stamWait -= dt; else this.stam = Math.min(MAX_STAM, this.stam + dt * STAM_REGEN);
-    for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as const) b[k] = inp[k] ? .16 : b[k] - dt;
+    if (inp.emote) this.emo = inp.emote;
+    for (const k of ['atk', 'hvy', 's1', 'dash', 'ult', 'emote'] as const) b[k] = inp[k] ? .16 : b[k] - dt;
     this.st += dt;
     const spd = d.spd * (this.slow > 0 ? .55 : 1);
 
     switch (this.state) {
+      // emote: diam menari sampai selesai; gerak/tombol apa pun langsung membatalkan (lanjut ke logika idle)
+      case 'emote':
+        if (this.st < (EMOTES[this.emo - 1]?.dur ?? 0) && Math.abs(inp.mx) <= .2 && !inp.up && !inp.down && !inp.block && Math.max(b.atk, b.hvy, b.s1, b.dash, b.ult) <= 0) { this.vx = 0; break; }
+        this.state = 'idle'; this.st = 0;
+      // falls through
       case 'idle': case 'walk': case 'crouch': case 'block': {
         this.face = opp.x >= this.x ? 1 : -1;
         if (this.lock > 0) { this.vx = 0; break; }
         if (this.tryActions(inp, m)) break;
+        if (b.emote > 0 && this.grounded) { b.emote = 0; this.state = 'emote'; this.st = 0; this.vx = 0; m.ev({ t: 'emote', f: this }); break; }
         if (inp.block) { this.state = 'block'; this.vx = 0; }
         else if (inp.up && this.root <= 0) {
           this.state = 'jump'; this.st = 0; this.vy = d.jump; this.y = .01; this.vx = inp.mx * spd * .95; this.airUsed = false;
