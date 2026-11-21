@@ -161,6 +161,8 @@ export class Bot {
         if (can && (L.hard ? dist > 2.5 && me.stam >= 1.5 && Math.random() < dt * 6 : L.dodge > .2 && dist > 5 && me.stam >= 2.5 && Math.random() < dt * 2)) inp.dash = true;
         break;
       case 'combo':
+        // karakter dengan kombo Light 4 pukulan: pola L-L-L diteruskan ke penutupnya
+        if (this.presses === 0 && this.pat === 'LLL' && me.move?.id === 'a3' && me.def.moves.a4) { this.pat = 'LLLL'; this.presses = 1; }
         if (dist > reach && can) inp.mx = to;
         else if (this.presses > 0 && (can || (me.state === 'attack' && me.seq !== this.pressSeq && (me.move!.heavy ? me.mt >= me.su + me.ac + me.re * (me.hitDone ? .3 : .5) - .1 : me.phase === 3 || me.hitDone)))) { this.pressSeq = me.seq; if (this.pat[this.pat.length - this.presses] === 'H') inp.hvy = true; else inp.atk = true; this.presses--; }
         else if (L.hard && this.presses <= 0 && me.state === 'attack' && me.hitDone && me.grounded && dist > reach && dist < 5 && me.stam >= 1) {

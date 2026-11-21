@@ -10,10 +10,37 @@ import type { FX } from './fx';
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const V = new THREE.Vector3();
+const LASH_N = 26, LASH_GEO = new THREE.SphereGeometry(1, 10, 8);
+/** Model golem hutan menghadap +z (seperti model petarung, diputar 3/4 ke arah lawan): badan batu berlumut, mata bercahaya; lengan berporos di bahu (diayun saat menghantam). */
+function buildGolem() {
+  const g = new THREE.Group(), stone = new THREE.MeshLambertMaterial({ color: 0x6b5a48, flatShading: true }), moss = new THREE.MeshLambertMaterial({ color: 0x2fa45c, flatShading: true });
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, par: THREE.Object3D = g) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; par.add(m); return m; };
+  add(new THREE.DodecahedronGeometry(.62, 0), stone, 0, 1.45, 0).scale.set(1.1, 1.15, .85);
+  add(new THREE.DodecahedronGeometry(.32, 0), stone, 0, 2.25, .12);
+  add(new THREE.DodecahedronGeometry(.45, 0), moss, 0, 1.95, -.05).scale.set(1.3, .45, 1.1);
+  for (const x of [-.12, .12]) add(new THREE.SphereGeometry(.05, 8, 6), new THREE.MeshBasicMaterial({ color: 0x9dffb0 }), x, 2.3, .4);
+  // kaki berporos di pinggul agar bisa melangkah bergantian
+  const legs: THREE.Group[] = [];
+  for (const x of [-.3, .3]) {
+    const hip = new THREE.Group(); hip.position.set(x, .88, 0); g.add(hip); legs.push(hip);
+    add(new THREE.CylinderGeometry(.18, .24, .85, 6), stone, 0, -.44, 0, hip);
+    add(new THREE.BoxGeometry(.36, .14, .5), stone, 0, -.83, .08, hip);
+  }
+  const arms: THREE.Group[] = [];
+  for (const x of [-.78, .78]) {
+    const sh = new THREE.Group(); sh.position.set(x, 1.85, 0); g.add(sh); arms.push(sh);
+    add(new THREE.CylinderGeometry(.16, .2, .9, 6), stone, 0, -.45, 0, sh);
+    add(new THREE.DodecahedronGeometry(.28, 0), stone, 0, -1, 0, sh);
+    add(new THREE.ConeGeometry(.12, .3, 5), moss, 0, -.05, 0, sh);
+  }
+  return { g, arms, legs, stone };
+}
+// dipakai bersama semua duri batu (FX hanya membuang geometri, bukan material)
+const ROCK_MATS = [0x6b5440, 0x8a6a4a].map(color => new THREE.MeshLambertMaterial({ color, flatShading: true }));
 
 class FighterView {
   model: CharModel; shadow: THREE.Mesh; target = P(); yaw: number; flashT = 0; walkPh = 0; lastX: number; lastHit = 0; alt = false;
-  aura: THREE.Mesh; auraOn = false; hitJ = 0; hitK = 0;
+  aura: THREE.Mesh; auraOn = false; hitJ = 0; hitK = 0; lash = new THREE.Group();
   private ctx: AnimCtx = { state: 'idle', u: 0, st: 0, t: 0, vy: 0, walkPh: 0, back: false, landed: false, alt: false };
   constructor(public f: Fighter, par: THREE.Group, alt = false) {
     this.model = new CharModel(f.def, f.elem, alt);
@@ -22,7 +49,11 @@ class FighterView {
     // aura bundar penanda kebal (dash tanpa arah)
     this.aura = new THREE.Mesh(new THREE.SphereGeometry(1.15, 28, 18), new THREE.MeshBasicMaterial({ color: ELEMS[f.elem].col, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
     this.aura.scale.set(1, 1.05, .8); this.aura.visible = false;
-    par.add(this.model.group, this.shadow, this.aura);
+    // tali elemen untuk gerakan cambuk (anim 'whip'): rantai bola yang menjulur dari tangan ke ujung jangkauan
+    const lm = new THREE.MeshBasicMaterial({ color: ELEMS[f.elem].col, transparent: true, opacity: .85, depthWrite: false });
+    for (let i = 0; i < LASH_N; i++) this.lash.add(new THREE.Mesh(LASH_GEO, lm));
+    this.lash.visible = false;
+    par.add(this.model.group, this.shadow, this.aura, this.lash);
     this.yaw = f.face * (Math.PI / 2 - .42); this.lastX = f.x;
   }
   update(m: Match, rdt: number, t: number, fx: FX) {
@@ -62,6 +93,34 @@ class FighterView {
     const act = f.state === 'attack' ? 1 : .25;
     for (const h of [md.handL, md.handR]) if (Math.random() < act) { h.getWorldPosition(V); fx.elemPuff(f.elem, V.x, V.y, V.z + .05, f.state === 'attack' ? 1.3 : .8); }
     const cy = f.y + 1.1;
+    const lmv = f.state === 'attack' ? f.move : null;
+    // langkah topan: garis-garis angin memanjang di belakang selama menerjang
+    if (lmv?.vis === 'galeStep' && f.mt >= f.su * .5 && f.mt < f.su + f.ac + f.re * .3) {
+      for (let i = 0; i < 6; i++) fx.one(f.x - f.face * rnd(0, .6), f.y + rnd(.2, 1.8), rnd(-.4, .4), -f.face * rnd(4, 9), 0, 0, rnd(.15, .3), rnd(.06, .1), i % 2 ? 0xffffff : ELEMS.angin.acc, 0, false, 5);
+    }
+    // tendangan badai: pusaran angin melingkari Zephyr saat melompat berputar
+    if (lmv?.vis === 'storm' && f.mt >= f.su && f.mt < f.su + f.ac + f.re * .6) {
+      for (let i = 0; i < 4; i++) { const a = t * 18 + i * 1.57, r = rnd(.7, 1.1); fx.one(f.x + Math.cos(a) * r, f.y + rnd(.2, 1.8), Math.sin(a) * r * .6, -Math.sin(a) * 5, rnd(1, 3), Math.cos(a) * 3, .3, .1, i % 2 ? 0xffffff : ELEMS.angin.acc, 0, false, 3); }
+    }
+    // tinju berapi: kepalan diselimuti api sejak ancang-ancang sampai pukulan selesai, meninggalkan jejak bara
+    if (lmv?.vis === 'fireFist' && f.mt < f.su + f.ac) {
+      md.handR.getWorldPosition(V); const k = f.mt < f.su ? .5 + f.mt / f.su * .5 : 1.3;
+      for (let i = 0; i < 5; i++) fx.one(V.x + rnd(-.1, .1), V.y + rnd(-.1, .1), V.z + rnd(-.1, .1), rnd(-.6, .6) - f.face * rnd(0, 2) * k, rnd(.5, 2.4), 0, rnd(.2, .4), rnd(.14, .24) * k, Math.random() < .4 ? 0xffd23a : 0xff5a1f, -2);
+      if (Math.random() < .5) fx.one(V.x, V.y, V.z, -f.face * rnd(.5, 1.5), rnd(.3, 1), 0, .6, .07, 0xfff1b0, 2);
+    }
+    // menjulur saat aktif, ditarik kembali di paruh awal recovery
+    const ext = !lmv || lmv.anim !== 'whip' || !lmv.box ? 0 : f.mt < f.su ? 0 : f.mt < f.su + f.ac ? Math.min(1, (f.mt - f.su) / (f.ac * .6)) : Math.max(0, 1 - (f.mt - f.su - f.ac) / (f.re * .5));
+    this.lash.visible = ext > .02;
+    if (this.lash.visible) {
+      md.handR.getWorldPosition(V); const hx = V.x, hy = V.y, hz = V.z, box = lmv!.box!;
+      const tx = f.x + f.face * box[1] * ext, ty = f.y + (box[2] + box[3]) / 2, mx = (hx + tx) / 2, my = Math.max(hy, ty) + .45 * ext;
+      this.lash.children.forEach((o, i) => {
+        const u = (i + 1) / LASH_N, iu = 1 - u; // kurva bezier kuadrat tangan → ujung, ujungnya bergelombang
+        o.position.set(iu * iu * hx + 2 * iu * u * mx + u * u * tx, iu * iu * hy + 2 * iu * u * my + u * u * ty + Math.sin(t * 30 - u * 9) * .06 * u, hz * iu);
+        o.scale.setScalar(.1 * (1 - u * .4) * (.9 + Math.sin(t * 40 + i) * .1));
+      });
+      if (Math.random() < .7) fx.one(tx, ty, 0, f.face * rnd(.5, 2), rnd(0, 2), rnd(-.5, .5), .35, .1, ELEMS[f.elem].acc, 6);
+    }
     if (f.burn > 0 && Math.random() < .7) fx.one(f.x + rnd(-.3, .3), cy + rnd(-.6, .5), .2, rnd(-.3, .3), rnd(1, 2.2), 0, .4, .2, Math.random() < .5 ? 0xff5a1f : 0xffd23a, -1);
     if (f.slow > 0 && Math.random() < .4) fx.one(f.x + rnd(-.4, .4), f.y + rnd(.1, .7), .2, 0, rnd(-.4, -.1), 0, .6, .12, 0x58d68a, 0, true);
     if (f.root > 0 && Math.random() < .6) fx.one(f.x + rnd(-.45, .45), f.y + rnd(0, .9), .25, 0, rnd(.2, .8), 0, .5, .13, Math.random() < .5 ? 0x7b4f2c : 0x2fc46c, 0, true);
@@ -97,6 +156,18 @@ export class FightView {
   private marker(e: Ent, color: number) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(e.w, 18), 2.4), this.basic(color, .3)); m.rotation.x = -Math.PI / 2; m.position.set(e.x, .03, -.2);
     this.group.add(m); return m;
+  }
+  /** duri batu yang mencuat beruntun dari tanah sepanjang w, lalu tenggelam */
+  private spikes(x: number, w: number, dir: number, n: number, h: number, life: number) {
+    for (let i = 0; i < n; i++) setTimeout(() => {
+      if (!this.alive) return;
+      const px = x + dir * ((i / (n - 1) - .5) * w), sh = h * rnd(.6, 1.1) * (.7 + .3 * Math.sin(i / (n - 1) * Math.PI));
+      const c = new THREE.Mesh(new THREE.ConeGeometry(rnd(.18, .3), sh, 5), ROCK_MATS[i % 3 ? 1 : 0]);
+      c.position.set(px, sh * .4, rnd(-.6, .6)); c.rotation.set(rnd(-.25, .25), rnd(0, 3), rnd(-.3, .3)); c.castShadow = true;
+      this.fx.rise(c, sh, life * rnd(.85, 1));
+      this.fx.burst(px, .15, .2, 6, 0x8a6a4a, 4, .6, .12, { g: 16, solid: true, up: 3 });
+    }, i * 22);
+    this.shake = Math.max(this.shake, .45);
   }
   private roots(x: number, w: number, n: number, h: number, life: number) {
     for (let i = 0; i < n; i++) {
@@ -151,6 +222,53 @@ export class FightView {
       }
       case 'eruption': return { fire: () => { fx.flash(e.x, 1.4, .2, E.acc, 3.8, .35); fx.pillar(e.x, 0, E.col, 2.4, 8, .55); fx.ring(e.x, .05, 0, E.acc, .6, 4.4, .45); fx.burst(e.x, 1, .2, 80, E.col, 9, .8, .28, { up: 4, g: -2, spread: 1 }); fx.burst(e.x, 1, .2, 40, E.acc, 13, .5, .14); this.shake = .6; } };
       case 'quake': return { fire: () => { const ox = e.owner ? e.owner.x : 0; fx.ring(ox, .05, 0, 0xe0b955, 1, 14, .6); fx.ring(ox, .05, 0, 0xffffff, .5, 9, .45); for (let x = -W; x <= W; x += 1.2) { fx.burst(x, .1, rnd(-.5, .5), 6, 0x8a6a4a, 7, .8, .16, { g: 20, solid: true, up: 5 }); fx.burst(x, .2, 0, 3, 0xd9c39c, 2, .7, .35, { solid: true }); } this.shake = .8; } };
+      case 'geyser': return { fire: () => { fx.pillar(e.x, 0, E.col, 1.1, 5, .45); fx.ring(e.x, .05, 0, E.acc, .3, 2, .35); fx.burst(e.x, .6, .2, 44, E.col, 8, .7, .18, { up: 8, g: 12, spread: .6 }); fx.burst(e.x, 1, .2, 20, 0xeaffff, 6, .4, .12, { up: 5 }); this.shake = Math.max(this.shake, .25); } };
+      case 'blast': return { fire: () => {
+        // semburan api dari telapak Pyrra ke depan, lalu meledak di ujung jangkauan
+        const d = e.dir || 1, x0 = e.x - d * e.w / 2, x1 = e.x + d * e.w / 2 * .8;
+        fx.flash(x0, 1.1, .3, E.acc, 1.2, .14);
+        for (let i = 0; i < 150; i++) { const c = Math.random() < .25 ? 0xffe07a : Math.random() < .5 ? E.acc : E.col; fx.one(x0, 1.1 + rnd(-.1, .1), .2 + rnd(-.1, .1), d * rnd(6, 13), rnd(-.7, 1), rnd(-.4, .4), rnd(.3, .5), rnd(.22, .42), c, -1.5, false, 2.5); }
+        fx.flash(x1, 1.1, .3, E.acc, 1.4, .2); fx.ring(x1, 1.1, .2, E.acc, .3, 1.6, .3, false); fx.burst(x1, 1.1, .2, 40, E.col, 8, .45, .2, { up: 2, g: -3, spread: .4 }); fx.burst(x1, 1.1, .2, 20, E.acc, 5, .35, .14);
+        this.shake = Math.max(this.shake, .3); } };
+      case 'crag': return { fire: () => { this.spikes(e.x, e.w, e.dir, 9, 1.9, .9); fx.ring(e.x, .05, 0, ELEMS.batu.acc, .4, 2.4, .4); fx.burst(e.x, .3, .2, 24, 0xd9c39c, 3, .8, .3, { solid: true, flat: true }); } };
+      case 'static': return { upd: () => { if (Math.random() < .55) { const x = e.x + rnd(-e.w / 2, e.w / 2); fx.bolt(x, rnd(1.6, 2.6), 0, rnd(-.4, .4), ELEMS.petir.acc, .1, .03); } if (Math.random() < .3) fx.ring(e.x, .05, 0, ELEMS.petir.acc, .3, e.w / 2, .2); for (let i = 0; i < 2; i++) fx.one(e.x + rnd(-1.8, 1.8), rnd(0, 2.4), rnd(-.5, .5), rnd(-3, 3), rnd(-3, 3), 0, .12, .1, 0xffffff, 0, false, 6); this.shake = Math.max(this.shake, .08); },
+        end: () => { fx.flash(e.x, 1.1, .3, ELEMS.petir.acc, 1.4, .2); fx.ring(e.x, 1.1, .2, ELEMS.petir.acc, .3, 2.6, .3, false, .08); fx.burst(e.x, 1.1, .3, 40, ELEMS.petir.acc, 12, .25, .12, { drag: 5 }); for (let i = 0; i < 4; i++) fx.bolt(e.x + rnd(-1.5, 1.5), 3, 0, 0, ELEMS.petir.col, .18, .06); this.shake = Math.max(this.shake, .45); this.av.flashLight = .6; } };
+      case 'snare': return { fire: () => { this.roots(e.x, e.w, 7, 1.3, 1.6); fx.ring(e.x, .05, 0, 0x58d68a, .3, 1.6, .35); } };
+      case 'golem': {
+        const { g: body, arms, legs, stone } = buildGolem(), bob = new THREE.Group(); bob.add(body); g.add(bob); this.group.add(g);
+        // bar HP di kaki golem (di atas kepala tertutup HUD), tidak ikut berputar dengan badan
+        const barBg = new THREE.Mesh(new THREE.PlaneGeometry(1.2, .12), new THREE.MeshBasicMaterial({ color: 0x111111, transparent: true, opacity: .7, depthWrite: false, depthTest: false }));
+        const bar = new THREE.Mesh(new THREE.PlaneGeometry(1.16, .08), new THREE.MeshBasicMaterial({ color: 0x58d68a, transparent: true, depthWrite: false, depthTest: false }));
+        barBg.position.set(0, .15, .9); bar.position.set(0, .15, .91); barBg.renderOrder = 10; bar.renderOrder = 11; /* isi bar digambar setelah latarnya */ g.add(barBg, bar);
+        let sl = e.sl || 0, hurt = e.hurt || 0, flash = 0, lastX = e.x, walk = 0, moving = 0;
+        fx.burst(e.x, .3, .2, 30, 0x58d68a, 5, .9, .14, { up: 4, g: 8, solid: true }); fx.ring(e.x, .05, 0, 0x58d68a, .4, 2.2, .5);
+        return { o: g, upd: (en, dt) => {
+          const dx = Math.abs(en.x - lastX); lastX = en.x; g.position.x = en.x; body.rotation.y = (en.dir || 1) * (Math.PI / 2 - .42);
+          moving += ((dx > .001 ? 1 : 0) - moving) * Math.min(1, dt * 10); walk += dx * 3.2;
+          const k = Math.max(0, Math.min(1, (en.hp ?? 1) / (en.hpMax ?? 1))); bar.scale.x = Math.max(.001, k); bar.position.x = -.58 * (1 - k);
+          if (en.hurt !== hurt) { hurt = en.hurt || 0; flash = .12; fx.burst(en.x, 1.4, .3, 10, 0x8a6a4a, 5, .5, .1, { g: 14, solid: true }); }
+          flash = Math.max(0, flash - dt); stone.emissive.setHex(flash > 0 ? 0x664433 : 0x000000); bob.position.x = flash > 0 ? rnd(-.05, .05) : 0;
+          // muncul dari tanah 0,4 dtk pertama, tenggelam 0,4 dtk terakhir
+          const rise = Math.min(1, en.t / .4, (en.life - en.t) / .4); g.position.y = -2.6 * (1 - Math.max(0, rise));
+          // langkah berat: kaki mengayun bergantian, badan naik-turun & bergoyang mengikuti langkah
+          bob.position.y = Math.abs(Math.sin(walk)) * .1 * moving; bob.rotation.z = Math.sin(walk) * .06 * moving;
+          legs[0].rotation.x = Math.sin(walk) * .55 * moving; legs[1].rotation.x = -Math.sin(walk) * .55 * moving;
+          const sw = en.swing || 0, raise = sw > 0 ? 1 - sw / .4 : 0; // lengan terangkat ke belakang selama ancang-ancang lalu menghantam ke depan
+          arms.forEach((a, i) => { const rest = -.25 + (i ? 1 : -1) * Math.sin(walk) * .35 * moving; a.rotation.x += ((sw > 0 ? 2.6 * raise : rest) - a.rotation.x) * Math.min(1, dt * (sw > 0 ? 10 : 12)); });
+          if (en.sl !== sl) {
+            sl = en.sl || 0; const hx = en.x + (en.dir || 1) * 1.1;
+            for (const a of arms) a.rotation.x = -1.2;
+            fx.ring(hx, .05, 0, 0x8a6a4a, .3, 2.2, .45); fx.ring(hx, .05, 0, 0x58d68a, .2, 1.4, .5, true, .25);
+            fx.burst(hx, .2, .2, 24, 0x8a6a4a, 6, .8, .14, { g: 18, solid: true, up: 5 }); fx.burst(hx, .3, .2, 14, 0x58d68a, 4, 1, .12, { g: 5, solid: true });
+            this.roots(hx, 1.2, 4, .8, .5); this.shake = Math.max(this.shake, .4);
+          }
+          if (Math.random() < .3) fx.one(en.x + rnd(-.5, .5), g.position.y + rnd(1, 2.3), rnd(-.4, .4), rnd(-.3, .3), rnd(-.5, .2), 0, .9, .08, Math.random() < .3 ? 0xff8fc0 : 0x58d68a, 1, true);
+        }, end: en => {
+          // hancur oleh lawan: runtuh jadi pecahan batu; habis waktu: daun berhamburan saja
+          if ((en.hp ?? 1) <= 0) { fx.burst(en.x, 1.3, .2, 40, 0x6b5a48, 7, 1, .18, { g: 18, solid: true, up: 3, spread: .5 }); fx.flash(en.x, 1.3, .3, 0x9dffb0, 1.2, .2); this.shake = Math.max(this.shake, .4); }
+          fx.burst(en.x, 1.2, .2, 30, 0x58d68a, 4, 1, .14, { g: 4, solid: true });
+        } };
+      }
       case 'tide': return { fire: () => { fx.ring(e.x, .08, 0, E.col, .4, 3.4, .4); fx.ring(e.x, .08, 0, E.acc, .2, 2.4, .5); fx.burst(e.x, .5, .2, 36, E.col, 7, .6, .16, { g: 10, flat: true, up: 3 }); } };
       case 'lava': {
         const mark = this.marker(e, 0xff7a1f);
@@ -179,8 +297,47 @@ export class FightView {
         if (e.kind !== 'block') { const v = this.views[e.def.idx]; v.flashT = .07; v.hitK = v.hitJ = e.fin ? .28 : e.strong ? .17 : .12; }
         // getaran naik tiap pukulan kombo; penutup: getaran besar, kamera menyentak ke titik kena, kilat putih besar
         this.shake = Math.max(this.shake, e.kind === 'block' ? .04 : e.fin ? .55 : (e.strong ? .3 : .12) * (1 + Math.min(5, (e.n || 1) - 1) * .15));
-        if (e.fin) { this.punch = { x: e.x, y: e.y, t: .32 }; fx.flash(e.x, e.y, .4, 0xffffff, 2.6, .16); fx.ring(e.x, e.y, .3, e.elem ? ELEMS[e.elem as Elem].acc : 0xffffff, .3, 2.4, .3, false); }
+        if (e.fin) { this.punch = { x: e.x, y: e.y, t: .32 }; const ff = !!e.att?.move?.vis && !!e.elem; fx.flash(e.x, e.y, .4, ff ? ELEMS[e.elem as Elem].col : 0xffffff, ff ? .8 : 2.6, .16); /* gerakan ber-efek khas: kilat kecil berwarna elemen agar efeknya tidak tertutup */ fx.ring(e.x, e.y, .3, e.elem ? ELEMS[e.elem as Elem].acc : 0xffffff, .3, 2.4, .3, false); }
         if (e.kind === 'break') { fx.ring(e.x, e.y, .3, 0xff4a4a, .3, 2, .35, false); fx.burst(e.x, e.y, .3, 24, 0xffd0d0, 9, .35, .13); }
+        // tinju berapi kena: bola api meledak, cincin api, bara beterbangan, asap gelap membubung
+        if (e.att?.move?.vis === 'fireFist' && e.kind !== 'block' && e.att.move.multi) fx.burst(e.x, e.y, .3, 16, 0xff5a1f, 5, .4, .2, { up: 2, g: -3 }); // versi rentetan: semburan kecil tiap pukulan
+        else if (e.att?.move?.vis === 'fireFist' && e.kind !== 'block') {
+          const X = e.x, Y = e.y, d = e.dir;
+          fx.flash(X, Y, .4, 0xff5a1f, .8, .14); fx.ring(X, Y, .3, 0xff7a1f, .3, 2.2, .35, false, .2); fx.ring(X, .06, 0, 0xff5a1f, .3, 2, .45);
+          fx.burst(X, Y, .3, 46, 0xff5a1f, 7, .55, .26, { up: 2.5, g: -3, spread: .3 }); fx.burst(X, Y, .3, 26, 0xffd23a, 10, .3, .14);
+          for (let i = 0; i < 18; i++) fx.one(X, Y, rnd(-.3, .3), d * rnd(2, 8), rnd(1, 6), rnd(-1, 1), rnd(.6, 1.1), rnd(.05, .09), 0xffb347, 9);
+          fx.burst(X, Y + .3, .2, 14, 0x3a2a24, 2, 1.1, .3, { up: 2, g: -1.5, solid: true });
+          this.shake = Math.max(this.shake, .6);
+        }
+        // langkah topan kena: dua tebasan angin menyilang + gelombang datar
+        if (e.att?.move?.vis === 'galeStep' && e.kind !== 'block') {
+          fx.slash(e.x, e.y, e.dir, 0xffffff, 1.3, .22); fx.slash(e.x, e.y + .2, -e.dir, ELEMS.angin.acc, 1.1, .22);
+          fx.ring(e.x, e.y, .3, ELEMS.angin.acc, .3, 2, .3, false, .06); fx.burst(e.x, e.y, .3, 20, 0xffffff, 10, .25, .08, { flat: true, drag: 5 });
+        }
+        // tendangan badai kena: cincin angin naik ke atas + semburan ke atas
+        if (e.att?.move?.vis === 'storm' && e.kind !== 'block') {
+          for (let i = 0; i < 3; i++) setTimeout(() => this.alive && fx.ring(e.x, e.y + i * .7, 0, i % 2 ? 0xffffff : ELEMS.angin.acc, .4, 1.6 - i * .3, .35), i * 50);
+          fx.burst(e.x, e.y, .3, 26, ELEMS.angin.acc, 9, .4, .1, { up: 8, drag: 3 });
+        }
+        // kilat kejut kena: sambaran dari langit ke lawan + percikan listrik
+        if (e.att?.move?.vis === 'thunder' && e.kind !== 'block' && !e.att.move.multi) {
+          fx.bolt(e.def.x, 12, e.def.y + .4, .2, ELEMS.petir.col, .3, .14); fx.flash(e.def.x, e.def.y + 1, .3, ELEMS.petir.acc, 1, .16);
+          fx.burst(e.x, e.y, .3, 28, ELEMS.petir.acc, 11, .2, .1, { drag: 6 }); fx.ring(e.def.x, .05, 0, ELEMS.petir.acc, .3, 1.6, .3); this.av.flashLight = .6;
+        }
+        // mekar berduri kena: kelopak merah muda & daun berhamburan, cincin bunga di titik kena
+        if (e.att?.move?.vis === 'bloom' && e.kind !== 'block') {
+          fx.ring(e.x, e.y, .3, 0xff8fc0, .2, 1.5, .4, false, .14); fx.ring(e.x, e.y, .3, 0x58d68a, .3, 2.1, .45, false, .06);
+          fx.burst(e.x, e.y, .3, 30, 0xff8fc0, 6, 1.1, .13, { g: 2, solid: true }); fx.burst(e.x, e.y, .3, 20, 0x58d68a, 5, 1.2, .12, { g: 3, solid: true });
+          fx.burst(e.att.x, e.att.y + 1, .3, 16, 0x9dffb0, 2, .9, .12, { up: 2 });
+        }
+        // palu karang kena: lantai retak berdebu, pecahan batu terlempar
+        if (e.att?.move?.vis === 'rockSmash' && e.kind !== 'block') {
+          const X = e.def.x;
+          fx.ring(X, .05, 0, 0xd9b24f, .3, 2.2, .45); fx.ring(X, .05, 0, 0x8a6a4a, .2, 1.4, .6, true, .3);
+          fx.burst(X, .2, .2, 26, 0x8a6a4a, 7, .9, .14, { g: 18, solid: true, up: 5 }); fx.burst(X, .1, .2, 18, 0xd9c39c, 2.5, .9, .35, { solid: true, flat: true });
+          if (!e.att.move.multi) this.spikes(X, 1.2, e.dir, 4, 1, .6);
+          this.shake = Math.max(this.shake, e.att.move.multi ? .25 : .6);
+        }
         if (e.fx?.shock && e.kind === 'hit') fx.bolt(e.def.x, e.def.y + 2.4, e.def.y, .3, ELEMS.petir.acc, .3, .05);
         break;
       }

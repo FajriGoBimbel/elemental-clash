@@ -137,7 +137,10 @@ export class Fighter {
         const total = this.su + this.ac + this.re;
         if (mv.lunge && this.mt >= this.su * .5 && this.mt < this.su + this.ac) this.vx = this.face * mv.lunge * (this.root > 0 ? 0 : 1);
         else if (this.grounded) this.vx = 0;
-        if (!this.spawned && this.mt >= this.su) { this.spawned = true; if (mv.spawn) m.spawn(mv.spawn, this, opp); }
+        if (!this.spawned && this.mt >= this.su) {
+          this.spawned = true; if (mv.spawn) m.spawn(mv.spawn, this, opp);
+          if (mv.hop) { this.vy = mv.hop; this.y = Math.max(this.y, .01); this.airUsed = false; } // boleh menyerang lagi di udara
+        }
         // kombo: tombol yang ditekan memilih cabang berikutnya (lihat daftar kombo di data.ts).
         // Gerakan Heavy menunggu 30% recovery bila kena (50% bila meleset) agar ritmenya terasa lebih berat dari Light.
         const br = mv.branch, nx = br && (b.hvy > 0 && br.hvy ? br.hvy : b.atk > 0 && br.atk ? br.atk : null);

@@ -5,13 +5,15 @@ export const W = 9;          // setengah lebar arena (dinding)
 export const RING = 7.6;     // tepi platform Puncak Awan
 export const ROUND_TIME = 60;
 
-export interface HitSpec { dmg: number; kb?: [number, number]; stun?: number; launch?: boolean; strong?: boolean; fx?: StatusFx; ult?: boolean; soft?: boolean; otg?: boolean; heavy?: boolean; crush?: boolean }
+export interface HitSpec { dmg: number; kb?: [number, number]; stun?: number; launch?: boolean; strong?: boolean; fx?: StatusFx; ult?: boolean; soft?: boolean; otg?: boolean; heavy?: boolean; crush?: boolean; drain?: number }
 export interface Ent extends HitSpec {
   id: number; kind: 'proj' | 'zone'; vis: string; owner: Fighter | null; elem: Elem | null;
   x: number; y: number; vx: number; vy: number; g?: number; w: number; h: number; // zone: y..y+h ; proj: pusat y, tinggi h
   t: number; delay: number; life: number; fired?: boolean; dead?: boolean; pierce?: boolean;
   tick?: number; pull?: number; final?: HitSpec; onlyGround?: boolean; trap?: boolean; pushOnly?: number;
   hitAt: number[]; dir: number;
+  /** golem pemanggilan: `cd` jeda antar hantaman, `swing` sisa ancang-ancang, `sl` penghitung hantaman, `hurt` penghitung kena (untuk animasi), `gseq` seq serangan terakhir yang mengenainya */
+  golem?: boolean; cd?: number; swing?: number; sl?: number; hp?: number; hpMax?: number; hurt?: number; gseq?: number;
 }
 export interface Pillar { x: number; hp: number }
 export type Ev = { t: string;[k: string]: any };
@@ -101,7 +103,8 @@ export class Match {
   private bounds() {
     const [a, b] = this.f;
     // petarung yang terbaring tidak ikut terdorong (bisa dilewati)
-    if (Math.abs(a.y - b.y) < 1.2 && a.alive && b.alive && a.state !== 'down' && b.state !== 'down') {
+    const thru = (f: Fighter) => f.state === 'attack' && !!f.move?.pass && f.mt < f.su + f.ac + f.re * .3;
+    if (Math.abs(a.y - b.y) < 1.2 && a.alive && b.alive && a.state !== 'down' && b.state !== 'down' && !thru(a) && !thru(b)) {
       const dx = b.x - a.x, min = .85;
       if (Math.abs(dx) < min) { const p = (min - Math.abs(dx)) / 2 * (dx >= 0 ? 1 : -1); a.x -= p; b.x += p; }
     }
@@ -128,6 +131,10 @@ export class Match {
     const lo = Math.min(x0, x1), hi = Math.max(x0, x1), y0 = att.y + mv.box[2], y1 = att.y + mv.box[3];
     for (const p of this.pillars) if (p.hp > 0 && hi > p.x - .5 && lo < p.x + .5 && y0 < 2.6 && (att as any)._pseq !== att.seq) {
       (att as any)._pseq = att.seq; this.hurtPillar(p, mv.dmg * att.def.atk);
+    }
+    // golem milik lawan ikut terkena (sekali per serangan), tanpa menghentikan pukulan ke petarung
+    for (const g of this.ents) if (g.golem && !g.dead && g.owner === def && hi > g.x - .7 && lo < g.x + .7 && y0 < 2.6 && y1 > 0 && g.gseq !== att.seq) {
+      g.gseq = att.seq; this.hurtGolem(g, mv.dmg * att.def.atk);
     }
     if (hi < def.x - .38 || lo > def.x + .38 || y1 < def.y || y0 > def.y + def.hurtH) return;
     att.hitDone = true; att.multiT = mv.multi || 0;
@@ -188,6 +195,7 @@ export class Match {
       if (def.comboN >= 9) def.inv = 1.2;
     }
     def.hp = Math.max(this.training ? 1 : 0, def.hp - dmg); this.lastHurt[def.idx] = this.clock;
+    if (att && s.drain && kind === 'hit') { att.hp = Math.min(att.def.hp, att.hp + dmg * s.drain); this.ev({ t: 'heal', f: att }); }
     if (att && !s.ult) att.energy = Math.min(100, att.energy + dmg * (kind === 'block' ? .05 : .075));
     def.energy = Math.min(100, def.energy + dmg * .05);
     // penutup kombo (pukulan ke-3, Heavy charged, tendangan kapak): hitstop panjang + slow-mo singkat; selain itu hitstop naik tiap pukulan kombo
@@ -214,11 +222,21 @@ export class Match {
     const dir = f.face, base = { owner: f, elem: f.elem, dir };
     const P = (p: any) => this.add({ kind: 'proj', ...base, ...p });
     const Z = (p: any) => this.add({ kind: 'zone', ...base, ...p });
+    const MZ = (vis: string, dx: number, w: number, h: number, delay: number) => { const mv = f.move!; Z({ vis, x: f.x + dir * dx, w, h, delay, dmg: mv.dmg, kb: mv.kb, stun: mv.stun, fx: mv.fx, launch: !!mv.launch, strong: true, heavy: true, crush: mv.crush }); };
     switch (key) {
       case 'bolt': P({ vis: 'bolt', x: f.x + dir * .8, y: 1.15, vx: 12 * dir, w: .55, h: .55, dmg: 68, kb: [4, 0], stun: .34, life: 1.7 }); break;
       case 'orb': P({ vis: 'orb', x: f.x + dir * .8, y: 1.15, vx: 10.5 * dir, w: .7, h: .7, dmg: 80, kb: [5, 0], stun: .36, life: 2 }); break;
       case 'boulder': P({ vis: 'boulder', x: f.x + dir * .7, y: 1.7, vx: 9 * dir, vy: 5.5, g: 15, w: .85, h: .85, dmg: 105, kb: [8, 5], launch: true, strong: true, life: 3 }); break;
       case 'gust': P({ vis: 'gust', x: f.x + dir * .8, y: 1.0, vx: 16 * dir, w: .9, h: 1.3, dmg: 38, kb: [15, 2], stun: .32, life: 1.1 }); break;
+      // memakai damage/knockback/efek gerakan pemanggilnya, jadi versi charged (crush, damage ×1,5) ikut lebih kuat
+      case 'geyser': MZ('geyser', 2, 2.6, 3.4, .08); break;
+      case 'blast': MZ('blast', 2, 3.4, 2.2, 0); break; // semburan api dari telapak: jangkauan .3–3.7 di depan Pyrra
+      case 'crag': MZ('crag', 2.1, 3.4, 1.8, .1); break;
+      case 'snare': MZ('snare', 2, 2.6, 1.4, .1); break;
+      // medan listrik: setruman kecil tiap 0,12 dtk, lalu ledakan penutup (damage & knockback gerakan pemanggil)
+      case 'static': { const mv = f.move!; Z({ vis: 'static', x: f.x + dir * .6, w: 3.6, h: 2.6, dmg: mv.dmg * .2, kb: [0, 0], stun: .35, fx: { shock: .1 }, tick: .12, life: .45, heavy: true, crush: mv.crush,
+        final: { dmg: mv.dmg * .5, kb: mv.kb, stun: mv.stun, launch: true, strong: true, heavy: true, fx: mv.fx } }); break; }
+      case 'rockToss': { const mv = f.move!; P({ vis: 'boulder', x: f.x + dir * .7, y: 1.9, vx: 11 * dir, vy: 3, g: 15, w: .75, h: .75, dmg: mv.dmg, kb: mv.kb, stun: mv.stun, launch: mv.launch, strong: true, crush: mv.crush, life: 3 }); break; }
       case 'tide':
         f.hp = Math.min(f.def.hp, f.hp + f.def.hp * .07); this.ev({ t: 'heal', f });
         Z({ vis: 'tide', x: f.x, w: 3.4, h: 2, dmg: 35, kb: [12, 3], stun: .3 }); break;
@@ -231,18 +249,46 @@ export class Match {
         for (let i = 0; i < 5; i++) this.sched.push({ t: i * .32, fn: () => Z({ vis: 'strike', x: o.x, w: 1.6, h: 8, dmg: 62, kb: [1, 0], stun: .4, fx: { shock: .25 }, delay: .28, ult: i === 0, strong: true }) });
         break;
       case 'trap': Z({ vis: 'trap', x: Math.max(-W + 1, Math.min(W - 1, f.x + dir * 3.2)), w: 1.3, h: .8, dmg: 40, kb: [0, 0], stun: .25, fx: { root: 1.5 }, delay: .4, life: 7, trap: true, onlyGround: true }); break;
-      case 'forest': Z({ vis: 'forest', x: o.x, w: 3.2, h: 2.6, dmg: 120, kb: [0, 0], stun: .5, fx: { root: 2.6, burn: 3 }, delay: .4, life: .2, ult: true }); break;
+      case 'golem': Z({ vis: 'golem', x: Math.max(-W + 1, Math.min(W - 1, f.x + dir * 1.3)), w: 1.6, h: 2.6, dmg: 0, life: 5, golem: true, cd: .7, swing: 0, sl: 0, hp: 280, hpMax: 280, hurt: 0, gseq: -1 }); break;
     }
+  }
+
+  private hurtGolem(g: Ent, dmg: number) {
+    g.hp! -= dmg; g.hurt!++;
+    if (g.hp! <= 0) { g.dead = true; this.ev({ t: 'entEnd', e: g }); }
+  }
+
+  /** Golem: berjalan mendekati lawan, ancang-ancang 0,4 dtk lalu menghantam tanah di depannya; hilang setelah `life`. */
+  private golemStep(e: Ent, dt: number) {
+    const o = this.f[1 - e.owner!.idx], d = o.x - e.x;
+    if (e.dead) return;
+    if (e.t >= e.life) { e.dead = true; this.ev({ t: 'entEnd', e }); return; }
+    if (this.phase !== 'fight') return;
+    if (e.swing! > 0) {
+      e.swing! -= dt;
+      if (e.swing! <= 0) { // hantaman
+        e.sl!++; const hx = e.x + e.dir * 1.1;
+        if (Math.abs(o.x - hx) < 1.4 && o.y < 1.6) this.applyHit(e.owner, o, { dmg: 55, kb: [2.5, 0], stun: .55, strong: true, heavy: true, ult: true, fx: { slow: 1.5 } }, e.x);
+      }
+      return;
+    }
+    e.dir = Math.sign(d) || e.dir; e.cd! -= dt;
+    if (Math.abs(d) > 1.5) e.x = Math.max(-W + .8, Math.min(W - .8, e.x + Math.sign(d) * 2.6 * dt));
+    else if (e.cd! <= 0) { e.swing = .4; e.cd = 1.1; }
   }
 
   private updateEnts(dt: number) {
     for (const e of this.ents) {
       e.t += dt;
+      if (e.golem) { this.golemStep(e, dt); continue; }
       if (e.kind === 'proj') {
         e.vy -= (e.g || 0) * dt; e.x += (e.vx + this.wind * .5) * dt; e.y += e.vy * dt;
         if (Math.abs(e.x) > W + 4 || (e.g && e.y < .3)) { e.dead = true; if (e.g) this.ev({ t: 'entEnd', e }); }
         for (const p of this.pillars) if (p.hp > 0 && !e.pushOnly && !e.ult && Math.abs(e.x - p.x) < .5 + e.w / 2 && e.y < 2.8) {
           e.dead = true; this.hurtPillar(p, e.dmg); this.ev({ t: 'entEnd', e });
+        }
+        for (const g of this.ents) if (g.golem && !g.dead && !e.dead && e.owner && g.owner !== e.owner && !e.pushOnly && Math.abs(e.x - g.x) < .7 + e.w / 2 && e.y < 2.8) {
+          e.dead = true; this.hurtGolem(g, e.dmg); this.ev({ t: 'entEnd', e });
         }
       }
       const armed = e.t >= e.delay;
