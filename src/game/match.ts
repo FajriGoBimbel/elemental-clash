@@ -150,7 +150,7 @@ export class Match {
   /** Damage dari efek berkala (terbakar). */
   dot(f: Fighter, dmg: number) {
     if (this.phase !== 'fight') return;
-    f.hp = Math.max(this.training ? 1 : 0, f.hp - dmg); this.lastHurt[f.idx] = this.clock;
+    f.hp = f.freeHp ? f.def.hp : Math.max(this.training ? 1 : 0, f.hp - dmg); this.lastHurt[f.idx] = this.clock;
     this.ev({ t: 'dot', f });
     if (f.hp <= 0) this.ko(f, 0);
   }
@@ -194,7 +194,7 @@ export class Match {
       else def.setHit(stun, dir * kb[0], kb[1], !!s.launch || def.comboN >= 9);
       if (def.comboN >= 9) def.inv = 1.2;
     }
-    def.hp = Math.max(this.training ? 1 : 0, def.hp - dmg); this.lastHurt[def.idx] = this.clock;
+    def.hp = def.freeHp ? def.def.hp : Math.max(this.training ? 1 : 0, def.hp - dmg); this.lastHurt[def.idx] = this.clock;
     if (att && s.drain && kind === 'hit') { att.hp = Math.min(att.def.hp, att.hp + dmg * s.drain); this.ev({ t: 'heal', f: att }); }
     if (att && !s.ult) att.energy = Math.min(100, att.energy + dmg * (kind === 'block' ? .05 : .075));
     def.energy = Math.min(100, def.energy + dmg * .05);

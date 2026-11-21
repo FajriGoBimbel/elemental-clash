@@ -13,6 +13,8 @@ const STAM_REGEN = .6, BREAK_COST = 2;
 export class Fighter {
   x = 0; y = 0; vx = 0; vy = 0; push = 0; face = 1;
   hp: number; energy = 0; stam = MAX_STAM; stamWait = 0;
+  /** cheat: pamungkas selalu siap / dash tanpa memakai stamina / HP tidak pernah berkurang */
+  freeUlt = false; freeDash = false; freeHp = false;
   state: State = 'idle'; st = 0;
   move: Move | null = null; mt = 0; su = 0; ac = 0; re = 0; hitDone = false; spawned = false; multiT = 0; seq = 0;
   cd1 = 0; cd2 = 0; burn = 0; burnTick = 0; slow = 0; root = 0; inv = 0; lock = 0; stunT = 0;
@@ -66,7 +68,7 @@ export class Fighter {
    *  Saat terhuyung (state hit) juga bisa sebagai combo breaker, tapi memakan 2 stamina. */
   private tryDash(inp: Input, m: Match): boolean {
     const dir = Math.abs(inp.mx) > .2 ? Math.sign(inp.mx) : 0, wake = this.state === 'down' || this.state === 'hit';
-    const cost = this.state === 'hit' ? BREAK_COST : 1;
+    const cost = this.freeDash ? 0 : this.state === 'hit' ? BREAK_COST : 1;
     if (!(this.buf.dash > 0 && this.stam >= cost && (this.root <= 0 || !dir))) return false;
     this.buf.dash = 0; this.stam -= cost; this.stamWait = 1; this.state = 'dash'; this.st = 0; this.move = null;
     this.dashDir = dir; this.inv = Math.max(this.inv, wake ? (dir ? .3 : .5) : dir ? .16 : .3);
@@ -78,6 +80,7 @@ export class Fighter {
   hold(inp: Input) { for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as const) if (inp[k]) this.buf[k] = .16; }
 
   update(dt: number, inp: Input, opp: Fighter, m: Match) {
+    if (this.freeUlt) this.energy = 100;
     const d = this.def, b = this.buf;
     this.cd1 = Math.max(0, this.cd1 - dt); this.cd2 = Math.max(0, this.cd2 - dt);
     this.slow = Math.max(0, this.slow - dt); this.root = Math.max(0, this.root - dt);

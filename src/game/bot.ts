@@ -1,10 +1,23 @@
-import { BotLevel, elemMul } from '../data';
+import { BotLevel, CharDef, elemMul } from '../data';
 import { Fighter, Input, noInput } from './fighter';
 import { Match, W, RING } from './match';
 
 // Bot memakai Input yang sama dengan pemain dan melihat lawan dengan jeda waktu reaksi.
 interface Snap { t: number; x: number; y: number; state: string; phase: number; seq: number; reach: number; block: boolean }
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+/** Semua rantai kombo karakter (mis. 'LLLL' Pyrra, 'LL' Terrok, 'HHHLLL' Zephyr lanjut ke udara), ditelusuri dari cabang gerakannya. */
+const CHAINS = new WeakMap<CharDef, string[]>();
+export function chainsOf(c: CharDef) {
+  let out = CHAINS.get(c); if (out) return out;
+  out = []; const mv = c.moves, res = out;
+  const walk = (id: string, pat: string) => {
+    const br = mv[id].branch || {};
+    if (!br.atk && !br.hvy || pat.length >= 6) { res.push(pat); return; }
+    if (br.atk) walk(br.atk, pat + 'L');
+    if (br.hvy) walk(br.hvy, pat + 'H');
+  };
+  walk('a1', 'L'); walk('hv', 'H'); CHAINS.set(c, out); return out;
+}
 
 export class Bot {
   private hist: Snap[] = []; private now = 0; private react: number;
@@ -13,17 +26,19 @@ export class Bot {
   private habit = { atk: 0, blk: 0, n: 0 }; private lastOppSeq = -1;
   private bossStep = 0; private pat = 'LLL';
   private downSeq = -1; private escape = false; private chaseSeq = -1; private pressSeq = -1; private holdSeq = -1; private wantHold = false;
-  private static PATS = ['LLL', 'LLH', 'LHH', 'HHH', 'HLL', 'HHL'];
   /** mode latihan: 'stand' | 'block' | null */
   dummy: string | null = null;
 
   constructor(public L: BotLevel, private boss = false) { this.react = rnd(L.react[0], L.react[1]); }
 
+  private chains: string[] = ['LLL'];
   private setPlan(p: string, t: number, presses = 0) {
     this.plan = p; this.planT = t; this.presses = presses; this.jumped = false;
-    // kombo: pilih salah satu pola L/H, dipotong sesuai jumlah tekanan
-    if (p === 'combo' && this.L.hard) this.presses = presses = 3;
-    if (p === 'combo') this.pat = Bot.PATS[Math.floor(Math.random() * Bot.PATS.length)].slice(0, Math.max(1, presses));
+    // kombo: pilih salah satu rantai khas karakter; bot yang cukup jago (3+ tekanan) menuntaskannya sampai penutup
+    if (p === 'combo') {
+      const ch = this.chains[Math.floor(Math.random() * this.chains.length)];
+      this.pat = this.L.hard || presses >= 3 ? ch : ch.slice(0, Math.max(1, presses)); this.presses = this.pat.length;
+    }
   }
 
   update(dt: number, me: Fighter, opp: Fighter, m: Match): Input {
@@ -31,6 +46,7 @@ export class Bot {
     this.now += dt;
     if (this.dummy === 'stand') return inp;
     if (this.dummy === 'block') { inp.block = true; return inp; }
+    this.chains = chainsOf(me.def);
     const mv = opp.move;
     this.hist.push({ t: this.now, x: opp.x, y: opp.y, state: opp.state, phase: opp.phase, seq: opp.seq, reach: mv?.box ? mv.box[1] + (mv.lunge ? mv.lunge * .25 : 0) : 0, block: opp.state === 'block' });
     while (this.hist.length > 2 && this.hist[1].t <= this.now - this.react) this.hist.shift();
@@ -82,6 +98,7 @@ export class Bot {
     if (me.actionable) for (const e of m.ents) {
       if (e.owner === me || e.t < this.react || e.pushOnly && !L.arena) continue;
       if (!e.owner && !L.arena) continue;
+      if (e.golem) continue; // golem ditangani terpisah di bawah
       if (e.kind === 'proj') {
         const tti = (me.x - e.x) / (e.vx || 1e-3);
         if (tti < 0 || tti > .45) continue;
@@ -98,6 +115,21 @@ export class Bot {
           inp.mx = d; if (e.delay - e.t < .3 && me.stam >= 1) inp.dash = true; return inp;
         }
       }
+    }
+    // 3b. golem pemanggilan lawan: tangkis/hindari hantamannya, atau hancurkan bila menghalangi
+    const gol = m.ents.find(e => e.golem && !e.dead && e.owner === opp);
+    if (gol && L.combo >= 2) {
+      const gd = gol.x - me.x, near = Math.abs(gd) < reach + .7, key = -(gol.id * 1000 + gol.sl!) - 1;
+      if (me.actionable && gol.swing! > 0 && Math.abs(me.x - (gol.x + gol.dir * 1.1)) < 1.7) {
+        // tangkisan hanya sah bila menghadap golem; golem di belakang (bot sudah melewatinya) → dash kebal
+        const front = Math.sign(gd) === me.face || Math.abs(gd) < .3;
+        if (!this.seenEnt.has(key)) { this.seenEnt.add(key); (gol as any)._b = Math.random() < L.block + L.dodge ? (front && me.stam >= 2 && Math.random() < .6 ? 'b' : me.stam >= 1 ? 'd' : '') : ''; }
+        if ((gol as any)._b === 'd' && gol.swing! > .2) return inp; // tunggu sampai hantaman hampir jatuh agar kebal dash menutupinya // hantaman golem kuras 2 stamina bila ditangkis
+        if ((gol as any)._b === 'b') { inp.block = true; return inp; }
+        if ((gol as any)._b === 'd') { inp.dash = true; return inp; }
+      }
+      // golem dekat atau menghalangi jalan ke lawan: fokus menghancurkannya dulu
+      if (this.plan !== 'smash' && (Math.abs(gd) < dist || near) && Math.abs(gd) < 3.5) this.setPlan('smash', rnd(1.2, 2));
     }
     // 4. menghukum serangan yang meleset
     if (s.phase === 3 && s.seq !== this.punSeq && dist < 3.4 && me.actionable) {
@@ -161,8 +193,6 @@ export class Bot {
         if (can && (L.hard ? dist > 2.5 && me.stam >= 1.5 && Math.random() < dt * 6 : L.dodge > .2 && dist > 5 && me.stam >= 2.5 && Math.random() < dt * 2)) inp.dash = true;
         break;
       case 'combo':
-        // karakter dengan kombo Light 4 pukulan: pola L-L-L diteruskan ke penutupnya
-        if (this.presses === 0 && this.pat === 'LLL' && me.move?.id === 'a3' && me.def.moves.a4) { this.pat = 'LLLL'; this.presses = 1; }
         if (dist > reach && can) inp.mx = to;
         else if (this.presses > 0 && (can || (me.state === 'attack' && me.seq !== this.pressSeq && (me.move!.heavy ? me.mt >= me.su + me.ac + me.re * (me.hitDone ? .3 : .5) - .1 : me.phase === 3 || me.hitDone)))) { this.pressSeq = me.seq; if (this.pat[this.pat.length - this.presses] === 'H') inp.hvy = true; else inp.atk = true; this.presses--; }
         else if (L.hard && this.presses <= 0 && me.state === 'attack' && me.hitDone && me.grounded && dist > reach && dist < 5 && me.stam >= 1) {
@@ -173,6 +203,16 @@ export class Bot {
           this.planT = 0;
         }
         break;
+      case 'smash': { // pukul golem dengan Light beruntun (tiap pukulan melukainya sekali)
+        if (!gol || Math.sign(gol.x - me.x) !== me.face && Math.abs(gol.x - me.x) > .5) { this.planT = 0; break; } // golem di belakang: pukulan tak bisa mengenainya
+        this.planT = Math.max(this.planT, .1); // selama golem hidup dan dekat, jangan ganti rencana
+        // pukul hanya di jeda setelah hantaman golem; menjelang hantaman berikutnya tangkis (atau mundur bila stamina habis)
+        const gd = gol.x - me.x, safe = gol.swing! <= 0 && gol.cd! > .75;
+        if (!safe && Math.abs(gd) < 2.6) { if (!can) break; if (me.stam >= 2 && (Math.sign(gd) === me.face || Math.abs(gd) < .3)) inp.block = true; else if (gol.swing! > 0 && gol.swing! < .25 && me.stam >= 1) inp.dash = true; else inp.mx = -Math.sign(gd); }
+        else if (Math.abs(gd) > reach - .1 && can) inp.mx = Math.sign(gd);
+        else if (can || (me.state === 'attack' && me.seq !== this.pressSeq && me.phase === 3)) { this.pressSeq = me.seq; inp.atk = true; }
+        break;
+      }
       case 'retreat':
         if (Math.abs(me.x - to * 1.5) < edge) inp.mx = -to; else this.planT = 0;
         break;

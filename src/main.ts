@@ -218,6 +218,7 @@ function startFight(oppId: string, arenaId: string, level: number, p1Id = app.ch
   ui.innerHTML = ''; stage.showSpin = 0;
   const view = new FightView(stage, m), bot = V ? null : new Bot(BOT_LEVELS[level], !!p2.boss);
   if (bot && training && app.dummy !== 'fight') bot.dummy = app.dummy;
+  if (!V) { m.f[0].freeUlt = save.cheat.ult; m.f[0].freeDash = save.cheat.dash; m.f[0].freeHp = save.cheat.hp; } // cheat hanya untuk pemain di mode lawan bot
   const F: Fight = fight = {
     m, view, hud: null, bot, demo: params.has('demo') && !V ? new Bot(BOT_LEVELS[2]) : null, paused: false, acc: 0, started: false, oppId, arenaId, level,
     ctls: [], ctlSlot: [], src: [], pauseBy: -1, pauseEl: null, dropSlot: -1,
@@ -409,7 +410,15 @@ function confirmBuy(name: string, price: number, yes: () => void) {
 // ---------- cheat: tekan \ di menu utama ----------
 const CHEATS: Record<string, () => string> = {
   'rich-guy': () => { save.coins += 1000; persist(); sound.coin(); return T('+1000 koin!', '+1000 coins!'); },
+  // kode unlimited: dijalankan sekali menyala, sekali lagi mati
+  'unlimited-ulti': () => cheatToggle('ult', T('Pamungkas tanpa batas', 'Unlimited ultimate')),
+  'unlimited-dash': () => cheatToggle('dash', T('Dash tanpa batas', 'Unlimited dash')),
+  'unlimited-hp': () => cheatToggle('hp', T('HP tanpa batas', 'Unlimited HP')),
 };
+function cheatToggle(k: 'ult' | 'dash' | 'hp', name: string) {
+  save.cheat = { ...save.cheat, [k]: !save.cheat[k] }; persist(); sound.confirm();
+  return `${name}: ${save.cheat[k] ? T('NYALA', 'ON') : T('MATI', 'OFF')}`;
+}
 addEventListener('keydown', e => {
   if (e.code !== 'Backslash' || !$('.scr.menu') || $('.over')) return;
   e.preventDefault();

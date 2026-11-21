@@ -10,9 +10,12 @@ export interface Save {
   streak: number; daily: { date: string; done: boolean }; wins: number; losses: number; tutorial: boolean;
   /** jumlah pertandingan Main Bareng berhadiah koin hari ini */
   mp: { date: string; n: number };
+  /** cheat yang menyala (dinyalakan/dimatikan lewat kode di menu) */
+  cheat: { ult: boolean; dash: boolean; hp: boolean };
 }
 const KEY = 'elemental-clash-save', SECRET = 0x9e3779b9;
 const fresh = (): Save => ({
+  cheat: { ult: false, dash: false, hp: false },
   v: 1, coins: 200, chars: ['aqualis', 'pyrra', 'terrok'], arenas: ['kuil', 'magma', 'gunung', 'dojo'],
   lang: (navigator.language || 'id').startsWith('id') ? 'id' : 'en', gfx: 1, sfx: .8, music: .5, haptic: true, cb: false, text: 1,
   ctrl: { size: 1, opacity: .75, margin: 0, swap: false }, lastChar: 'aqualis', level: 1, story: {}, ease: {},
@@ -26,7 +29,7 @@ function dec(s: string) { const [h, d] = s.split('.'); const o = Uint8Array.from
 
 export let save: Save = fresh();
 export function loadSave() {
-  try { const raw = localStorage.getItem(KEY); if (raw) { const d = dec(raw), f = fresh(); save = { ...f, ...d, ctrl: { ...f.ctrl, ...d.ctrl } }; } } catch { save = fresh(); }
+  try { const raw = localStorage.getItem(KEY); if (raw) { const d = dec(raw), f = fresh(); save = { ...f, ...d, ctrl: { ...f.ctrl, ...d.ctrl }, cheat: { ...f.cheat, ...d.cheat } }; } } catch { save = fresh(); }
   return save;
 }
 export function persist() { try { localStorage.setItem(KEY, enc(save)); } catch { /* penyimpanan penuh/diblokir: game tetap jalan */ } }
