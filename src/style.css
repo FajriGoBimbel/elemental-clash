@@ -216,6 +216,9 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .pop { position: absolute; font-family: var(--disp); font-weight: 700; font-size: 1.5rem; transform: translate(-50%, -50%); animation: rise .8s ease-out both; text-shadow: 0 2px 6px #000; display: flex; align-items: center; gap: .15rem; white-space: nowrap; }
 .pop.up { color: var(--good); font-size: 2.1rem; } .pop.dn { color: var(--bad); }
 .pop small { font-size: .45em; letter-spacing: .08em; }
+.pop.laugh { color: #ffd166; font-size: 1.7rem; font-style: italic; animation: laugh 1s ease-out both; --r: -14deg; }
+.pop.laugh.r { --r: 14deg; }
+@keyframes laugh { 0% { transform: translate(-50%, -50%) scale(.3) rotate(0); opacity: 0; } 20% { transform: translate(-50%, -80%) scale(1.15) rotate(var(--r)); opacity: 1; } 100% { transform: translate(-50%, -260%) scale(.9) rotate(calc(var(--r) * -.5)); opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 0) scale(.5); } 20% { opacity: 1; transform: translate(-50%, -60%) scale(1.15); } to { opacity: 0; transform: translate(-50%, -190%); } }
 .pause { position: absolute; top: 4.9rem; left: 50%; transform: translateX(-50%); width: 2.3rem; height: 2.3rem; border-radius: 50%; background: rgba(8, 10, 22, .65); border: 1px solid var(--line); pointer-events: auto; font-weight: 700; font-size: .8rem; }
 .ultban { position: absolute; left: 0; right: 0; bottom: 22%; padding: .5rem 8%; font-family: var(--disp); font-weight: 700; font-style: italic; font-size: 2.6rem; text-transform: uppercase; color: #fff; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--el) 80%, transparent) 25%, color-mix(in srgb, var(--el) 80%, transparent) 75%, transparent); text-shadow: 0 2px 10px rgba(0, 0, 0, .7); opacity: 0; }
@@ -242,6 +245,13 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .cb.hvy { right: 4.9rem; bottom: 4.9rem; width: 4.4rem; height: 4.4rem; border-color: #fff; background: rgba(255, 255, 255, .1); }
 .cb.hvy svg { stroke-width: 3.6; }
 .cb.s1 { right: 10rem; bottom: 4.6rem; width: 4.3rem; height: 4.3rem; border-color: var(--el); color: var(--el); }
+.cb.emo { right: 11.6rem; bottom: 9rem; width: 3rem; height: 3rem; font-size: 1.3rem; }
+.ctl.emo-open .cb.emo { background: rgba(255, 255, 255, .3); }
+.emos { position: absolute; right: 10.6rem; bottom: 12.3rem; display: none; gap: .35rem; pointer-events: auto; }
+.ctl.emo-open .emos { display: flex; }
+.eb { width: 2.8rem; height: 2.8rem; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .55); background: rgba(10, 13, 28, .7); font-size: 1.25rem; display: grid; place-items: center; color: #fff; }
+.eb:active { transform: scale(.9); }
+.ctl.swap .eb { transform: scaleX(-1); }
 .cb.dsh { right: 1.2rem; bottom: 6.6rem; width: 4rem; height: 4rem; }
 .cb.ult { right: 4.4rem; bottom: 9.8rem; width: 4.8rem; height: 4.8rem; border-color: var(--gold); color: #0a0c18; background: radial-gradient(circle, #fff, var(--gold)); box-shadow: 0 0 1.4rem var(--gold); display: none; animation: pulse .7s infinite; }
 .cb.ult.ready { display: grid; }

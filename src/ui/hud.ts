@@ -54,6 +54,12 @@ export class Hud {
     e.classList.remove('show'); void e.offsetWidth; e.classList.add('show');
   }
   notice(text: string, color = '#ffd166', dur = 2.2) { const n = this.q.notice; n.textContent = text; n.style.setProperty('--el', color); n.classList.add('show'); this.noticeT = dur; }
+  /** Tulisan tawa melayang (emote ketawa ngejek). */
+  laugh(x: number, y: number, n: number) {
+    const d = document.createElement('div'); d.className = 'pop laugh' + (n % 2 ? ' r' : ''); d.style.left = x + 'px'; d.style.top = y + 'px';
+    d.textContent = n % 3 === 2 ? '😂' : n % 2 ? 'HA!' : 'HAHA';
+    this.q.pops.appendChild(d); setTimeout(() => d.remove(), 1000);
+  }
   /** Panah keunggulan elemen di titik kena (hijau naik / merah turun). */
   pop(x: number, y: number, adv: number) {
     const d = document.createElement('div'); d.className = 'pop ' + (adv > 0 ? 'up' : 'dn'); d.style.left = x + 'px'; d.style.top = y + 'px';

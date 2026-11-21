@@ -60,7 +60,7 @@ class FighterView {
     const f = this.f, c = this.ctx, md = this.model;
     this.walkPh += Math.abs(f.x - this.lastX) * 2.7; this.lastX = f.x;
     if (f.hitSeq !== this.lastHit) { this.lastHit = f.hitSeq; this.alt = !this.alt; }
-    c.state = f.state; c.st = f.st; c.t = t + f.idx * 1.7; c.vy = f.vy; c.walkPh = this.walkPh; c.back = Math.sign(f.vx) !== f.face; c.landed = f.landed; c.alt = this.alt; c.held = f.held > 0 ? f.y : undefined; c.thrown = f.thrown;
+    c.state = f.state; c.st = f.st; c.t = t + f.idx * 1.7; c.vy = f.vy; c.walkPh = this.walkPh; c.back = Math.sign(f.vx) !== f.face; c.landed = f.landed; c.alt = this.alt; c.emo = f.emo; c.held = f.held > 0 ? f.y : undefined; c.thrown = f.thrown;
     if (f.state === 'attack' && f.move) {
       c.anim = f.move.anim;
       c.u = f.mt < f.su ? f.mt / f.su : f.mt < f.su + f.ac ? 1 + (f.mt - f.su) / f.ac : 2 + Math.min(1, (f.mt - f.su - f.ac) / f.re);
@@ -86,7 +86,7 @@ class FighterView {
       md.group.position.x += rnd(-1, 1) * .07 * p; md.group.position.y += rnd(0, 1) * .03 * p;
       const sq = Math.sin(p * Math.PI) * .09 * Math.min(1.6, this.hitK / .12); md.group.scale.set(1 + sq, 1 - sq, 1 + sq);
     } else md.group.scale.set(1, 1, 1);
-    const ty = f.state === 'win' ? f.face * .3 : f.face * (Math.PI / 2 - .42);
+    const ty = f.state === 'win' || f.state === 'emote' ? f.face * .3 : f.face * (Math.PI / 2 - .42);
     this.yaw += (ty - this.yaw) * Math.min(1, rdt * 14); md.group.rotation.y = this.yaw;
     this.shadow.position.set(f.x, .02, 0); const s = Math.max(.35, 1 - Math.max(0, f.y) * .22) * f.def.look.bulk; this.shadow.scale.setScalar(s);
     this.shadow.visible = f.y > -.5;

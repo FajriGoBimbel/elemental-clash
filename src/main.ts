@@ -7,7 +7,7 @@ import { Stage } from './gfx/stage';
 import { FightView } from './gfx/fightview';
 import { Hud } from './ui/hud';
 import { Controls, KEYMAP } from './ui/input';
-import { Input, noInput } from './game/fighter';
+import { Input, noInput, type Fighter } from './game/fighter';
 import { HostRoom } from './net/room';
 import { Mirror, snapshot } from './net/sync';
 import { getSock } from './net/transport';
@@ -273,6 +273,12 @@ function beginRound1() {
   f.m.pt = 0; f.m.ev({ t: 'round', n: 1 });
   const a = f.m.arena; if (!f.m.pure && a.elem) setTimeout(() => fight === f && f.hud?.notice(`${tr(a.name)}: ${tr(a.effect)}`, hex(ELEMS[a.elem!].col), 3.5), 1800);
 }
+/** Emote ketawa: tulisan "HAHA" bermunculan di atas kepala selama emote masih berjalan. */
+function laughFx(fi: Fighter, n = 0) {
+  const f = fight; if (!f?.hud || fi.state !== 'emote' || n > 6) return;
+  const [x, y] = stage.project(fi.x + (Math.random() - .5) * .8, fi.y + 2.05); f.hud.laugh(x, y, n);
+  setTimeout(() => fight === f && laughFx(fi, n + 1), 330);
+}
 function onFightEvent(e: Ev) {
   const f = fight; if (!f) return; const hud = f.hud, m = f.m;
   if (vs?.cfg === 'D' && !f.mirror) vs.evq.push(e); // diteruskan ke layar kedua bersama snapshot
@@ -301,6 +307,7 @@ function onFightEvent(e: Ev) {
     case 'roundEnd': if (e.reason === 'time') hud?.msg(e.winner < 0 ? T('Seri', 'Draw') : T('Waktu Habis', 'Time Up'), e.winner < 0 ? T('Ronde diulang', 'Round replayed') : '', 1.6); else if (e.reason === 'ring') { hud?.msg('Ring Out!', '', 1.6, '#6fe3b8'); sound.ko(); } break;
     case 'matchEnd': f.ctls.forEach(c => c.enabled = false); if (f.mirror) break; setTimeout(() => fight === f && (app.mode === 'tour' ? ext?.end(e.winner, [...m.wins]) : app.mode === 'versus' ? vsResult(e.winner) : result(e.winner === 0)), 900); break;
     case 'charged': sound.elem(e.f.elem, .8); break;
+    case 'emote': if (e.f.emo === 4) laughFx(e.f); break;
     case 'jump': sound.jump(); break; case 'land': sound.land(e.slam); break; case 'dash': sound.dash(); break; case 'heal': sound.heal(); break;
     case 'pillarBreak': sound.boom(); hud?.notice(T('Pilar hancur!', 'Pillar destroyed!'), '#e0b955', 1.4); break;
   }
@@ -773,7 +780,7 @@ function mergeInput(a: Input, b: Input): Input {
 function padInput(a: Input): Input {
   if (!padUp() || app.mode === 'versus') return a;
   const b = pad!.input[0].read();
-  return mergeInput(a, b);
+  return { mx: Math.abs(a.mx) >= Math.abs(b.mx) ? a.mx : b.mx, up: a.up || b.up, down: a.down || b.down, atk: a.atk || b.atk, hvy: a.hvy || b.hvy, s1: a.s1 || b.s1, atkHold: a.atkHold || b.atkHold, hvyHold: a.hvyHold || b.hvyHold, block: a.block || b.block, dash: a.dash || b.dash, ult: a.ult || b.ult, emote: a.emote || b.emote };
 }
 function padOpen(): Promise<boolean> {
   if (pad) return Promise.resolve(true);

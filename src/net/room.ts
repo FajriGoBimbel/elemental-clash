@@ -4,6 +4,7 @@
 // - Input (UDP)   : 60×/dtk, tiap paket membawa 3 frame terakhir agar paket hilang tidak terasa.
 // - Umpan balik   : UDP dari host (HP, energi, cooldown, getar). Paket UDP tanpa token sesi yang sah dibuang.
 import { Input, noInput } from '../game/fighter';
+import { EMOTES } from '../data';
 import type { NetEv, Sock } from './transport';
 
 export const UDP_PORT = 47820, TCP_PORT = 47821;
@@ -16,12 +17,13 @@ const parse = (s: string) => { try { return JSON.parse(s); } catch { return null
 
 const BITS = ['up', 'down', 'block', 'atk', 's1', 'dash', 'ult', 'hvy', 'atkHold', 'hvyHold'] as const;
 const EDGE = ['atk', 'hvy', 's1', 'dash', 'ult'] as const;
-export type Frame = [number, number];
-export function pack(i: Input): Frame { let b = 0; BITS.forEach((k, n) => { if (i[k]) b |= 1 << n; }); return [Math.round(i.mx * 100), b]; }
+/** [arah×100, bit tombol, nomor emote] */
+export type Frame = [number, number, number?];
+export function pack(i: Input): Frame { let b = 0; BITS.forEach((k, n) => { if (i[k]) b |= 1 << n; }); return i.emote ? [Math.round(i.mx * 100), b, i.emote] : [Math.round(i.mx * 100), b]; }
 
 /** Input jarak jauh untuk satu pemain. Tombol sekali-tekan dikumpulkan sampai dibaca simulasi. */
 export class RemoteInput {
-  private held = noInput(); private edges = noInput(); lastSeq = -1;
+  private held = noInput(); private edges = noInput(); private emo = 0; lastSeq = -1;
   push(seq: number, frames: Frame[]) {
     if (!Array.isArray(frames)) return;
     for (let k = Math.min(frames.length, 3) - 1; k >= 0; k--) {
@@ -30,10 +32,11 @@ export class RemoteInput {
       this.held.mx = Math.max(-1, Math.min(1, (f[0] | 0) / 100)); this.held.up = !!(b & 1); this.held.down = !!(b & 2); this.held.block = !!(b & 4);
       this.held.atkHold = !!(b & (1 << BITS.indexOf('atkHold'))); this.held.hvyHold = !!(b & (1 << BITS.indexOf('hvyHold')));
       EDGE.forEach(e => { if (b & (1 << BITS.indexOf(e))) this.edges[e] = true; });
+      const em = f[2] | 0; if (em >= 1 && em <= EMOTES.length) this.emo = em;
     }
   }
-  read(): Input { const i = { ...this.held }; for (const e of EDGE) { i[e] = this.edges[e]; this.edges[e] = false; } return i; }
-  release() { this.held = noInput(); this.edges = noInput(); }
+  read(): Input { const i = { ...this.held }; for (const e of EDGE) { i[e] = this.edges[e]; this.edges[e] = false; } i.emote = this.emo; this.emo = 0; return i; }
+  release() { this.held = noInput(); this.edges = noInput(); this.emo = 0; }
 }
 
 // ---------------- host ----------------

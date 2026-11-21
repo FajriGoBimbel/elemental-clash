@@ -304,6 +304,14 @@ export interface BotLevel {
   /** hardcore: kombo selalu penuh, dash-cancel untuk menekan terus, kebal & gerakan tipuan. Damage/HP tetap sama. */
   hard?: boolean;
 }
+/** Emote ejekan; nomor emote = indeks + 1 (0 = tidak ada). Pose ada di gfx/character.ts. */
+export const EMOTES: { icon: string; name: L; dur: number }[] = [
+  { icon: '🕺', name: ['Joget Gemoy', 'Gemoy Dance'], dur: 4 },
+  { icon: '🫴', name: ['Ayo Sini', 'Come On'], dur: 2.4 },
+  { icon: '💪', name: ['Pamer Otot', 'Flex'], dur: 2.4 },
+  { icon: '🤣', name: ['Ketawa Ngejek', 'Mock Laugh'], dur: 2.4 },
+];
+
 export const BOT_LEVELS: BotLevel[] = [
   { id: 'pemula', name: ['Pemula', 'Beginner'], goal: ['Belajar kontrol', 'Learn the controls'], react: [.6, .8], think: [.55, 1.0], aggr: .32, block: .06, dodge: 0, punish: 0, combo: 1, skill: .08, ult: .1, elem: false, arena: false, read: false },
   { id: 'normal', name: ['Normal', 'Normal'], goal: ['Pemain kasual', 'Casual players'], react: [.35, .5], think: [.35, .65], aggr: .5, block: .28, dodge: .04, punish: .2, combo: 2, skill: .3, ult: 1, elem: false, arena: false, read: false },

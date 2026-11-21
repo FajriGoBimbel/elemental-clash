@@ -1,13 +1,13 @@
 // Kontrol pemain: joystick virtual + tombol sentuh (landscape) dan keyboard untuk desktop.
 import { Fighter, Input, noInput, MAX_STAM } from '../game/fighter';
-import type { Elem } from '../data';
+import { EMOTES, type Elem } from '../data';
 import { save, T } from '../save';
 import { icon, SVG, elVar } from './dom';
 
-const P1: Record<string, string> = { KeyA: 'l', KeyD: 'r', KeyW: 'u', KeyS: 'd', KeyJ: 'atk', KeyK: 'hvy', KeyL: 's1', KeyI: 'ult', Space: 'block', KeyO: 'dash', ShiftLeft: 'dash' };
+const P1: Record<string, string> = { KeyA: 'l', KeyD: 'r', KeyW: 'u', KeyS: 'd', KeyJ: 'atk', KeyK: 'hvy', KeyL: 's1', KeyI: 'ult', Space: 'block', KeyO: 'dash', ShiftLeft: 'dash', KeyE: 'emo1', Digit1: 'emo1', Digit2: 'emo2', Digit3: 'emo3', Digit4: 'emo4' };
 const P2: Record<string, string> = {
   ArrowLeft: 'l', ArrowRight: 'r', ArrowUp: 'u', ArrowDown: 'd', Numpad1: 'atk', Comma: 'atk', Numpad2: 'hvy', Period: 'hvy', Numpad3: 's1', Slash: 's1',
-  Numpad5: 'ult', Semicolon: 'ult', Numpad0: 'block', Quote: 'block', NumpadDecimal: 'dash', ShiftRight: 'dash',
+  Numpad5: 'ult', Semicolon: 'ult', Numpad0: 'block', Quote: 'block', NumpadDecimal: 'dash', ShiftRight: 'dash', Numpad6: 'emo1', Numpad7: 'emo2', Numpad8: 'emo3', Numpad9: 'emo4',
 };
 /** Peta tombol keyboard: satu pemain memakai semuanya; dua pemain di satu layar dibagi kiri/kanan. */
 export const KEYMAP = { solo: { ...P2, ...P1 }, p1: P1, p2: P2 };
@@ -18,7 +18,7 @@ type Edge = 'atk' | 'hvy' | 's1' | 'dash' | 'ult';
 
 export class Controls {
   el: HTMLElement; private held: Record<string, boolean> = {}; private edge: Record<string, boolean> = {};
-  private sx = 0; private sy = 0; private stickId = -1; private ox = 0; private oy = 0; private btn: Record<string, HTMLElement> = {};
+  private sx = 0; private sy = 0; private stickId = -1; private ox = 0; private oy = 0; private btn: Record<string, HTMLElement> = {}; private emo = 0;
   onPause: () => void = () => { }; enabled = true;
 
   private keys: Record<string, string>;
@@ -27,6 +27,8 @@ export class Controls {
     const el = this.el = document.createElement('div'); el.className = 'ctl auto' + (o.side ? ' half ' + o.side : ''); el.setAttribute('style', elVar(elem));
     el.innerHTML = `<div class="stick-zone"><div class="stick-base"><div class="stick-knob"></div></div></div>
       <div class="btns">
+        <button class="cb emo" aria-label="Emote" aria-expanded="false">🕺</button>
+        <div class="emos">${EMOTES.map((e, i) => `<button class="eb" data-e="${i + 1}" aria-label="${T(...e.name)}" title="${T(...e.name)}">${e.icon}</button>`).join('')}</div>
         <button class="cb dsh" data-k="dash" aria-label="Dash">${SVG.dsh}<small>DASH</small></button>
         <button class="cb blk" data-k="block" aria-label="${T('Tangkis', 'Block')}">${SVG.blk}</button>
         <button class="cb s1" data-k="s1" aria-label="${T('Spesial', 'Special')}">${icon(elem)}<small>SP</small><i class="cd"></i></button>
@@ -35,7 +37,11 @@ export class Controls {
         <button class="cb atk" data-k="atk" aria-label="${T('Serangan Ringan', 'Light Attack')}">${SVG.atk}</button>
       </div>`;
     parent.appendChild(el); this.applySettings();
-    el.querySelectorAll<HTMLElement>('.cb').forEach(b => {
+    // tombol emote membuka/menutup pilihan; memilih langsung memicu emote lalu menutup pilihan
+    const eb = el.querySelector<HTMLElement>('.cb.emo')!, open = (v: boolean) => { el.classList.toggle('emo-open', v); eb.setAttribute('aria-expanded', String(v)); };
+    eb.addEventListener('pointerdown', e => { e.preventDefault(); open(!el.classList.contains('emo-open')); });
+    el.querySelectorAll<HTMLElement>('.eb').forEach(b => b.addEventListener('pointerdown', e => { e.preventDefault(); this.emo = +b.dataset.e!; open(false); }));
+    el.querySelectorAll<HTMLElement>('.cb[data-k]').forEach(b => {
       const k = b.dataset.k!; this.btn[k] = b;
       b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('on'); if (k !== 'block') this.edge[k] = true; this.held[k] = true; });
       const up = () => { b.classList.remove('on'); this.held[k] = false; };
@@ -61,6 +67,7 @@ export class Controls {
   private kd = (e: KeyboardEvent) => {
     if (e.code === 'Escape' || e.code === 'KeyP') { this.onPause(); return; }
     const k = this.keys[e.code]; if (!k) return; e.preventDefault();
+    if (k.startsWith('emo')) { if (!e.repeat) this.emo = +k.slice(3); return; }
     if (!e.repeat && (k === 'atk' || k === 'hvy' || k === 's1' || k === 'dash' || k === 'ult')) this.edge[k] = true;
     this.held[k] = true;
   };
@@ -73,11 +80,12 @@ export class Controls {
   }
   /** Membaca input satu langkah simulasi; tombol sekali-tekan langsung dikosongkan. */
   read(): Input {
-    const i = noInput(); if (!this.enabled) { this.edge = {}; return i; }
+    const i = noInput(); if (!this.enabled) { this.edge = {}; this.emo = 0; return i; }
     const h = this.held;
     i.mx = (h.r ? 1 : 0) - (h.l ? 1 : 0) || (Math.abs(this.sx) > .28 ? Math.sign(this.sx) * Math.min(1, Math.abs(this.sx) * 1.5) : 0);
     i.up = !!h.u || this.sy < -.6; i.down = !!h.d || this.sy > .6; i.block = !!h.block; i.atkHold = !!h.atk; i.hvyHold = !!h.hvy;
     for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as Edge[]) { i[k] = !!this.edge[k]; this.edge[k] = false; }
+    i.emote = this.emo; this.emo = 0;
     return i;
   }
   /** Memperbarui cooldown jurus dan tombol pamungkas. */
