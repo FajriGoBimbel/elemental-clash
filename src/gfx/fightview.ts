@@ -60,7 +60,7 @@ class FighterView {
     const f = this.f, c = this.ctx, md = this.model;
     this.walkPh += Math.abs(f.x - this.lastX) * 2.7; this.lastX = f.x;
     if (f.hitSeq !== this.lastHit) { this.lastHit = f.hitSeq; this.alt = !this.alt; }
-    c.state = f.state; c.st = f.st; c.t = t + f.idx * 1.7; c.vy = f.vy; c.walkPh = this.walkPh; c.back = Math.sign(f.vx) !== f.face; c.landed = f.landed; c.alt = this.alt;
+    c.state = f.state; c.st = f.st; c.t = t + f.idx * 1.7; c.vy = f.vy; c.walkPh = this.walkPh; c.back = Math.sign(f.vx) !== f.face; c.landed = f.landed; c.alt = this.alt; c.held = f.held > 0 ? f.y : undefined; c.thrown = f.thrown;
     if (f.state === 'attack' && f.move) {
       c.anim = f.move.anim;
       c.u = f.mt < f.su ? f.mt / f.su : f.mt < f.su + f.ac ? 1 + (f.mt - f.su) / f.ac : 2 + Math.min(1, (f.mt - f.su - f.ac) / f.re);
@@ -77,7 +77,9 @@ class FighterView {
     }
     const fast = f.state === 'attack' || f.state === 'hit' || f.state === 'block' || f.state === 'dash';
     md.apply(this.target, rdt, fast ? 26 : 14, t);
-    md.group.position.set(f.x, f.y, 0);
+    // dibanting terbalik: angkat badan secukupnya agar kepala menyentuh lantai, bukan tenggelam (badan menekuk di pose)
+    const flip = f.thrown ? Math.max(0, -Math.cos(md.pose[4] * Math.PI / 180) * 1.55 * md.scale - f.y) : 0;
+    md.group.position.set(f.x, f.y + flip, 0);
     // kena pukul: badan bergetar selama hitstop lalu gepeng sesaat dan memantul kembali
     if (this.hitJ > 0) {
       this.hitJ = Math.max(0, this.hitJ - rdt); const p = this.hitJ / this.hitK;
@@ -368,6 +370,8 @@ export class FightView {
       case 'pushed': fx.burst(e.f.x, .6, .3, 22, 0xeaffff, 6, .5, .15, { g: 10 }); break;
       case 'pillarHit': fx.burst(e.p.x, 1.4, -.5, 8, 0xd9c39c, 4, .6, .12, { g: 14, solid: true }); break;
       case 'pillarBreak': fx.burst(e.p.x, 1.3, -.6, 40, 0xcdb48f, 7, .9, .2, { g: 16, solid: true, spread: .6 }); this.shake = Math.max(this.shake, .3); break;
+      // Kunci Maut tuntas: kilatan merah, gelombang benturan, dan debu di lantai
+      case 'subFinish': fx.flash(e.x, .5, .3, ELEMS.netral.acc, 2, .25); fx.ring(e.x, .1, 0, ELEMS.netral.acc, .4, 3, .45); fx.ring(e.x, .6, .2, 0xffffff, .3, 2, .3, false); fx.burst(e.x, .3, .2, 30, 0xd9c8b0, 5, .7, .2, { solid: true, flat: true }); this.shake = Math.max(this.shake, .55); this.av.flashLight = .5; break;
       case 'elemShift': this.views[e.f.idx].model.setElem(e.f.elem); fx.ring(e.f.x, e.f.y + 1.1, .2, ELEMS[e.f.elem as Elem].col, .3, 2.6, .5, false); fx.burst(e.f.x, e.f.y + 1.1, .2, 30, ELEMS[e.f.elem as Elem].col, 6, .6, .16); break;
       case 'fallStart': fx.burst(e.f.x, .2, .2, 14, 0xffffff, 4, .5, .2, { solid: true }); break;
       case 'round': this.cine = null; break;

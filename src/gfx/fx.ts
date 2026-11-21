@@ -130,6 +130,7 @@ export class FX {
       case 'angin': this.one(x, y, z, rnd(-2, 2), rnd(-.2, .6), 0, .35, .1 * k, c, 0, false, 3); break;
       case 'petir': this.one(x + rnd(-.15, .15), y + rnd(-.15, .15), z, rnd(-3, 3), rnd(-3, 3), 0, .12, .1 * k, c, 0, false, 6); break;
       case 'tumbuhan': this.one(x, y, z, rnd(-.5, .5), rnd(.1, .8), rnd(-.2, .2), .8, .1 * k, Math.random() < .3 ? 0xff8fc0 : 0x58d68a, .8, Math.random() < .6); break;
+      case 'netral': this.one(x, y, z, rnd(-.4, .4), rnd(.1, .6), 0, .35, .07 * k, Math.random() < .3 ? E!.acc : 0xffffff, 1.5); break; // keringat/kapur tipis
       default: this.one(x, y, z, rnd(-1, 1), rnd(-1, 1), 0, .3, .1 * k, c);
     }
   }
@@ -147,6 +148,8 @@ export class FX {
       case 'angin': this.burst(x, y, .3, 16 * k, E.acc, 9, .28, .1, { flat: true, drag: 4 }); this.ring(x, y, .3, E.acc, .3, 1.6 * k, .3, false, .06); break;
       case 'petir': this.burst(x, y, .3, 18 * k, E.acc, 11, .16, .12, { drag: 6 }); this.bolt(x, y + 1.4, y - .2, .3, E.col, .14, .04); break;
       case 'tumbuhan': this.burst(x, y, .3, 12 * k, 0x58d68a, 4, .8, .13, { g: 4, solid: true }); this.burst(x, y, .3, 8 * k, E.acc, 3.5, .9, .11, { g: 2, solid: true }); break;
+      // bela diri: percikan keringat + gelombang benturan
+      case 'netral': this.burst(x, y, .3, 14 * k, 0xeaf4ff, 7, .35, .09, { g: 10 }); this.ring(x, y, .3, 0xffffff, .2, 1.4 * k, .2, false, .1); this.burst(x, y, .3, 5 * k, E.acc, 5, .2, .08); break;
       default: this.burst(x, y, .3, 10 * k, 0xffe9b0, 6, .25, .12);
     }
   }

@@ -15,6 +15,10 @@ export class Fighter {
   hp: number; energy = 0; stam = MAX_STAM; stamWait = 0;
   /** cheat: pamungkas selalu siap / dash tanpa memakai stamina / HP tidak pernah berkurang */
   freeUlt = false; freeDash = false; freeHp = false;
+  /** dikunci pamungkas lawan (Kunci Maut): tidak bisa bergerak/bertindak selama sisa waktu ini */
+  held = 0;
+  /** baru dilempar suplex: berputar terus hingga terhempas punggung lebih dulu */
+  thrown = false;
   state: State = 'idle'; st = 0;
   move: Move | null = null; mt = 0; su = 0; ac = 0; re = 0; hitDone = false; spawned = false; multiT = 0; seq = 0;
   cd1 = 0; cd2 = 0; burn = 0; burnTick = 0; slow = 0; root = 0; inv = 0; lock = 0; stunT = 0;
@@ -28,7 +32,7 @@ export class Fighter {
   reset(x: number, face: number) {
     this.x = x; this.y = 0; this.vx = this.vy = this.push = 0; this.face = face; this.hp = this.def.hp;
     this.stam = MAX_STAM; this.stamWait = 0; this.state = 'idle'; this.st = 0; this.move = null;
-    this.cd1 = this.cd2 = this.burn = this.slow = this.root = this.inv = this.lock = 0; this.comboN = 0;
+    this.cd1 = this.cd2 = this.burn = this.slow = this.root = this.inv = this.lock = this.held = 0; this.comboN = 0;
     this.buf = { atk: 0, hvy: 0, s1: 0, dash: 0, ult: 0 };
   }
   get grounded() { return this.y <= 0.001; }
@@ -47,7 +51,7 @@ export class Fighter {
   }
 
   setHit(stun: number, kx: number, ky: number, launch: boolean) {
-    this.move = null; this.lock = 0; this.st = 0; this.hitSeq++; this.chargeT = 0;
+    this.move = null; this.lock = 0; this.st = 0; this.hitSeq++; this.chargeT = 0; this.thrown = false;
     if (launch || !this.grounded) {
       this.state = 'down'; this.landed = false; this.vx = kx; this.vy = ky < 0 ? ky : Math.max(ky, 5); // ky negatif = dibanting ke bawah this.y = Math.max(this.y, .02);
     } else { this.state = 'hit'; this.stunT = stun; this.vx = 0; this.push = kx; }
@@ -95,6 +99,7 @@ export class Fighter {
     const blkTap = inp.block && !this.blkPrev; this.blkPrev = inp.block;
     this.st += dt;
     const spd = d.spd * (this.slow > 0 ? .55 : 1);
+    if (this.held > 0) { this.held -= dt; this.vx = this.vy = this.push = 0; if (this.state === 'down') this.st = 0; return; }
 
     switch (this.state) {
       case 'idle': case 'walk': case 'crouch': case 'block': {
@@ -138,7 +143,7 @@ export class Fighter {
           this.chargeT = 0;
         }
         const total = this.su + this.ac + this.re;
-        if (mv.lunge && this.mt >= this.su * .5 && this.mt < this.su + this.ac) this.vx = this.face * mv.lunge * (this.root > 0 ? 0 : 1);
+        if (mv.lunge && this.mt >= this.su * .5 && this.mt < this.su + this.ac && !(mv.pin && this.hitDone)) this.vx = this.face * mv.lunge * (this.root > 0 ? 0 : 1);
         else if (this.grounded) this.vx = 0;
         if (!this.spawned && this.mt >= this.su) {
           this.spawned = true; if (mv.spawn) m.spawn(mv.spawn, this, opp);
@@ -169,7 +174,7 @@ export class Fighter {
         if (this.tryDash(inp, m)) break; // terbaring maupun masih terlempar di udara
         // tekan tangkis saat jatuh = bangun kebal di tempat, sama seperti dash tanpa arah (1 stamina)
         if (blkTap) { this.buf.dash = .16; if (this.tryDash({ ...inp, mx: 0 }, m)) break; this.buf.dash = 0; }
-        if (this.landed && this.st >= .8) { this.state = 'getup'; this.st = 0; this.inv = .5; }
+        if (this.landed && this.st >= (d.tough ? .5 : .8)) { this.state = 'getup'; this.st = 0; this.inv = .5; }
         break;
       case 'getup':
         if (this.st >= .28) { this.state = 'idle'; this.st = 0; this.comboN = 0; }
@@ -189,7 +194,7 @@ export class Fighter {
         const vy0 = this.vy; this.y = 0; this.vy = 0;
         if (this.state === 'jump') { this.state = 'idle'; this.st = 0; m.ev({ t: 'land', f: this }); }
         else if (this.state === 'attack' && this.move?.air) { this.move = null; this.state = 'idle'; this.st = 0; m.ev({ t: 'land', f: this }); }
-        else if (this.state === 'down' || this.state === 'ko') { this.landed = true; this.st = 0; this.vx = 0; this.push = 0; m.ev({ t: 'land', f: this, heavy: true, slam: vy0 < -15.5 }); }
+        else if (this.state === 'down' || this.state === 'ko') { this.landed = true; this.st = 0; this.vx = 0; this.push = 0; m.ev({ t: 'land', f: this, heavy: true, slam: vy0 < -15.5 || this.thrown }); this.thrown = false; }
       }
     }
     this.x += (this.vx + this.push) * dt;

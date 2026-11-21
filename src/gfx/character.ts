@@ -48,6 +48,9 @@ function seq(u: number, fr: [number, Pose][], out: Pose) {
 }
 
 const S0 = P();
+// ground & pound: posisi menindih (GNP_K), tinju ditarik (GNP_C) dan dihujamkan ke bawah (GNP_X)
+const GNP_K: PoseSpec = { y: -.05, lean: 48, lL: [12, 100, 28], lR: [12, 100, 28], twist: 0, hdT: 0, hd: 10 };
+const GNP_C = [80, 25, 135], GNP_X = [62, 4, 6];
 const atk = (wind: PoseSpec, hit: PoseSpec, tw = .75): [number, Pose][] => [[0, S0], [tw, P(wind)], [1.08, P(hit)], [2.05, P(hit)], [3, S0]];
 const SBK = P({ lean: 78, hd: -42, hdT: -60, aL: [64, 8, 138], aR: [56, 8, 140], lL: [6, 26, 0], lR: [-138, 0, 0], y: -.04 });
 const ATK: Record<string, [number, Pose][]> = {
@@ -102,6 +105,35 @@ const ATK: Record<string, [number, Pose][]> = {
     [1.08, P({ lR: [150, 0, 4], lL: [60, 110, 4], lean: -10, y: .8, aL: [160, 30, 10], aR: [160, 30, 10], hd: -14 })],
     [2.05, P({ lR: [100, 110, 4], lL: [100, 120, 4], lean: 10, y: .75, aL: [60, 40, 90], aR: [60, 40, 90] })],
     [2.6, P({ lL: [40, 70, 6], lR: [20, 60, 6], lean: 18, y: -.06 })], [3, P()]],
+  // ---- Kiting Man (MMA) ----
+  // tendangan betis: kaki belakang menyapu rendah dari samping ke betis lawan
+  lowkick: atk({ lR: [-10, 50, 10], lL: [20, 28, 4], twist: -35, lean: 6, y: -.02 }, { lR: [40, 8, 35], lL: [8, 20, 0], twist: 55, lean: -6, roll: -12, y: -.02, aR: [10, 40, 60], aL: [62, 14, 104] }, .75),
+  // overhand: tinju belakang melengkung dari atas dengan badan ikut jatuh ke depan
+  overhand: atk({ aR: [120, 70, 120], twist: -40, lean: -4, y: .02 }, { aR: [95, 10, 20], aL: [40, 30, 110], twist: 55, lean: 30, y: -.1, hd: 10, roll: -6, lL: [44, 50, 5], lR: [-30, 20, 6] }),
+  // lutut terbang: jongkok sesaat lalu melompat dengan lutut kanan naik, kedua tangan menarik ke bawah
+  flyknee: [[0, P()], [.85, P({ y: -.08, lL: [50, 80, 5], lR: [10, 60, 5], lean: 12, aL: [20, 30, 90], aR: [10, 30, 90] })],
+    [1.08, P({ lR: [120, 140, 4], lL: [-30, 70, 4], lean: -6, y: .15, aL: [-20, 40, 60], aR: [-30, 40, 50], hd: 8 })],
+    [2.05, P({ lR: [110, 130, 4], lL: [-20, 60, 4], lean: -2, y: .1, aL: [-10, 40, 60], aR: [-20, 40, 50] })], [3, P()]],
+  // sikut turun: siku diangkat setinggi mungkin lalu dihujamkan ke bawah
+  elbowdown: atk({ aR: [175, 10, 150], twist: -20, lean: -8, y: .04 }, { aR: [70, 25, 155], aL: [50, 20, 110], lean: 32, twist: 30, y: -.1, hd: 12, lL: [48, 60, 5], lR: [-26, 30, 6] }),
+  // takedown: turun level (pinggul tetap di atas lantai), lalu menyeruduk pinggang lawan dengan kedua lengan memeluk
+  takedown: atk({ lean: 35, lL: [70, 100, 6], lR: [-10, 70, 6], aL: [60, 20, 80], aR: [60, 20, 80], twist: 0, hd: -20, hdT: 0 },
+    { lean: 58, lL: [80, 90, 6], lR: [-50, 30, 6], aL: [95, 30, 70], aR: [95, 30, 70], twist: 0, hd: -30, hdT: 0 }),
+  // ground & pound: menindih (lutut mengangkang) lalu tinju kiri-kanan bergantian ke bawah
+  gnp: [[0, P()], [.8, P({ ...GNP_K, aR: GNP_C, aL: GNP_C })],
+    ...[1, 1.2, 1.4, 1.6, 1.8, 2].map((u, i): [number, Pose] => [u, P({ ...GNP_K, aR: i % 2 ? GNP_C : GNP_X, aL: i % 2 ? GNP_X : GNP_C, twist: i % 2 ? -14 : 14 })]),
+    [2.6, P({ ...GNP_K, aR: GNP_C, aL: GNP_C })], [3, P()]],
+  // suplex: meraih, memeluk pinggang, mengangkat, lalu melengkungkan punggung ke belakang melempar lawan (kaki tetap menapak)
+  suplex: [[0, P()], [.8, P({ lean: 24, y: -.06, aL: [85, 35, 40], aR: [85, 35, 40], lL: [50, 70, 6], lR: [-10, 60, 6], twist: 0, hdT: 0 })],
+    [1.08, P({ lean: 14, aL: [80, 40, 115], aR: [80, 40, 115], lL: [40, 60, 6], lR: [-6, 50, 6], twist: 0, hdT: 0 })],
+    [2.05, P({ lean: -6, y: .04, aL: [110, 30, 100], aR: [110, 30, 100], lL: [24, 30, 6], lR: [-10, 24, 6], twist: 0, hdT: 0, hd: -10 })],
+    [2.45, P({ lean: -62, sp: -20, aL: [165, 20, 40], aR: [165, 20, 40], lL: [40, 70, 6], lR: [10, 60, 6], twist: 0, hdT: 0, hd: -40 })],
+    [2.85, P({ lean: 10, lL: [50, 80, 6], lR: [0, 70, 6] })], [3, P()]],
+  // armbar: duduk lalu rebah di sisi kepala lawan, kedua kaki lurus menyilang di atas dadanya, tangan menarik lengannya ke dada
+  armbar: [[0, P({ ...GNP_K, aR: GNP_C, aL: GNP_C })], [.6, P({ lL: [95, 120, 8], lR: [85, 120, 8], lean: 14, aL: [70, 25, 90], aR: [70, 25, 90], twist: 0, hdT: 0 })], // lompat dengan lutut terlipat
+    [.95, P({ pitch: -45, lL: [50, 40, 10], lR: [40, 40, 10], aL: [70, 15, 100], aR: [70, 15, 100], twist: 0, hdT: 0 })],
+    [1.08, P({ pitch: -85, lL: [15, 10, 10], lR: [25, 20, -10], aL: [60, 15, 100], aR: [60, 15, 100], twist: 0, hdT: 0, hd: 20 })],
+    [2.6, P({ pitch: -85, lL: [18, 6, 12], lR: [28, 14, -12], aL: [55, 15, 110], aR: [55, 15, 110], lean: -6, twist: 0, hdT: 0, hd: 24 })], [3, P()]],
   spin: atk({ lR: [40, 90, 8], aL: [20, 50, 60], aR: [20, 50, 60], twist: -60 }, { lR: [88, 5, 12], lL: [-4, 10, 0], aL: [10, 82, 16], aR: [10, 82, 16], lean: -8, twist: 0 }),
 };
 const POSES = {
@@ -118,6 +150,7 @@ const POSES = {
   lie: P({ pitch: -90, aL: [4, 72, 12], aR: [8, 64, 16], lL: [6, 12, 12], lR: [-4, 18, 14], twist: 0, hdT: 0, lean: 0 }),
   win: P({ aR: [172, 14, 24], aL: [8, 38, 84], lL: [6, 6, 9], lR: [-4, 6, 9], twist: 0, lean: -4, hdT: 0, hd: -8 }),
   lose: P({ lean: 30, hd: 30, aL: [10, 8, 10], aR: [10, 8, 10], lL: [10, 14, 6], lR: [-4, 12, 6], twist: 0, hdT: 0 }),
+  lifted: P({ lean: 38, hd: 24, twist: 0, hdT: 0, aL: [30, 40, 40], aR: [20, 45, 50], lL: [16, 34, 6], lR: [-4, 40, 8] }),
   fall: P({ pitch: 24, aL: [150, 40, 30], aR: [130, 50, 20], lL: [40, 60, 12], lR: [-20, 50, 12] }),
   show: P({ twist: 0, hdT: 0, lean: 2, aL: [10, 12, 22], aR: [14, 16, 60], lL: [6, 8, 7], lR: [-5, 8, 7] }),
 };
@@ -133,7 +166,7 @@ function lerpPts(u: number, pts: [number, number][]) {
   for (let i = 1; i < pts.length; i++) if (u <= pts[i][0]) { const [u0, v0] = pts[i - 1], [u1, v1] = pts[i]; return v0 + (v1 - v0) * (u - u0) / (u1 - u0); }
   return pts[pts.length - 1][1];
 }
-export interface AnimCtx { state: string; anim?: string; u: number; st: number; t: number; vy: number; walkPh: number; back: boolean; landed: boolean; alt: boolean }
+export interface AnimCtx { state: string; anim?: string; u: number; st: number; t: number; vy: number; walkPh: number; back: boolean; landed: boolean; alt: boolean; /** tinggi badan saat dipegang suplex (undefined = tidak dipegang) */ held?: number; thrown?: boolean }
 /** Menghitung pose target untuk state petarung. */
 export function poseFor(c: AnimCtx, out: Pose) {
   const t = c.t;
@@ -157,7 +190,15 @@ export function poseFor(c: AnimCtx, out: Pose) {
     case 'dash': out.set(POSES.dash); return;
     case 'immune': out.set(POSES.immune); out[0] = Math.sin(t * 9) * .02; return;
     case 'hit': out.set(c.alt ? POSES.hitB : POSES.hitA); return;
-    case 'down': case 'ko': out.set(c.landed ? POSES.lie : POSES.fly); if (!c.landed) out[4] = -40 - Math.min(50, c.st * 160); return;
+    case 'down': case 'ko':
+      // diangkat suplex: badan tegak lunglai tersampir ke bahu penyerang, kaki menjuntai
+      if (c.thrown && !c.landed) {
+        // lanjut berputar ke depan; begitu kepala mendekati lantai pinggul menekuk (kaki melipat ke atas kepala), lalu mendarat telentang
+        const pit = 120 + Math.min(150, c.st * 700), k = Math.min(1, Math.max(0, (pit - 170) / 80));
+        out.set(POSES.lifted); out[4] = pit; out[15] = out[18] = 16 + 94 * k; out[16] = out[19] = 34 + 30 * k; out[1] = 38 + 12 * k; return;
+      } // lanjut berputar ke depan, mendarat telentang (≡ pose lie)
+      if (c.held !== undefined && !c.landed) { out.set(POSES.lifted); out[4] = Math.max(0, c.held - .35) * 110; return; } // makin tinggi terangkat makin terbalik, kepala lebih dulu melewati bahu penyerang
+      out.set(c.landed ? POSES.lie : POSES.fly); if (!c.landed) out[4] = -40 - Math.min(50, c.st * 160); return;
     case 'getup': seq(c.st, [[0, POSES.lie], [.3, POSES.crouch]], out); return;
     case 'win': out.set(POSES.win); out[0] = Math.abs(Math.sin(t * 5)) * .06; out[12] = 172 + Math.sin(t * 10) * 6; return;
     case 'lose': out.set(POSES.lose); return;
@@ -213,7 +254,7 @@ export class CharModel {
     this.spine.position.y = .05; this.pelvis.add(this.spine);
     const torso = add(this.spine, new THREE.CylinderGeometry(.2 * lk.sh, .135 * b, TORSO, 12), c1, 0, TORSO / 2, 0); torso.scale.z = .72;
     add(this.spine, new THREE.CylinderGeometry(.15 * b, .15 * b, .07, 12), gAcc, 0, .03, 0).scale.z = .8;
-    add(this.spine, sph(.07), gCol, 0, TORSO * .62, .125 * lk.sh, false); // permata elemen di dada
+    const gem = add(this.spine, sph(.07), gCol, 0, TORSO * .62, .125 * lk.sh, false); // permata elemen di dada
     this.chest.position.set(0, TORSO * .6, 0); this.spine.add(this.chest);
     for (const s of [1, -1]) {
       const sh = new THREE.Group(), el = new THREE.Group(); sh.position.set(s * .225 * lk.sh, TORSO - .06, 0); el.position.y = -UA;
@@ -298,6 +339,42 @@ export class CharModel {
         for (let i = 0; i < 5; i++) { const a = (i - 2) * .5, g = new THREE.Group(); g.position.set(Math.sin(a) * .14 * b, -.02, Math.cos(a) * .1 - .02); this.pelvis.add(g); const m = add(g, sph(.1), i % 2 ? c1 : hair, 0, -.13, 0); m.scale.set(.6, 1.5, .18); g.rotation.set(Math.cos(a) > .5 ? -.3 : .25, a, 0); swayOf(g, .1, 3 + i); }
         break;
       }
+      case 'afro': { // Kiting Man: bertelanjang dada, rambut kribo, kacamata, handwrap putih ala Muay Thai di tangan & kaki, tato di lengan
+        torso.material = skin; gem.visible = false;
+        const meshes = (o: THREE.Object3D) => o.children.filter((c): c is THREE.Mesh => (c as THREE.Mesh).isMesh && (c as THREE.Mesh).material !== outlineMat);
+        const wrap = T(0xf3f1ea), ink = T(0x1d1a22);
+        const ring = (par: THREE.Object3D, r: number, y: number, mat: THREE.Material, t = .014) => add(par, new THREE.TorusGeometry(r, t, 6, 16), mat, 0, y, 0, false).rotation.x = Math.PI / 2;
+        for (const [sh, el] of this.arms) {
+          for (const m of meshes(sh)) m.material = skin; // bahu telanjang
+          for (const m of meshes(el)) if (m.geometry.type === 'SphereGeometry' || m.geometry.type === 'CylinderGeometry') { m.material = wrap; if (m.geometry.type === 'SphereGeometry') m.scale.setScalar(1.12); } // kepalan & pergelangan dibalut
+          for (const y of [-FA * .7, -FA * .84]) ring(el, .062 * b, y, wrap, .016); // lilitan handwrap
+          // tato: dua gelang tribal di lengan atas + mata panah di bawahnya
+          ring(sh, .07 * b, -UA * .3, ink, .01); ring(sh, .068 * b, -UA * .42, ink, .007);
+          for (let i = 0; i < 3; i++) { const a = (i - 1) * .9, m = add(sh, cone(.022, .07), ink, Math.sin(a) * .066 * b, -UA * .56, Math.cos(a) * .066 * b, false); m.rotation.x = Math.PI; }
+        }
+        for (const [, knee] of this.legs) {
+          for (const m of meshes(knee)) m.material = m.geometry.type === 'CapsuleGeometry' && m.position.y < -SH + .2 ? wrap : skin; // betis & telapak telanjang, pergelangan kaki dibalut
+          for (const y of [-SH + .2, -SH + .07]) ring(knee, .074 * b, y, wrap, .015); // lilitan di pergelangan & punggung kaki
+        }
+        // rambut kribo: bola besar di belakang garis dahi + benjolan ikal di permukaannya
+        const curl = T(shade(lk.hair, 1.5));
+        add(this.head, sph(.25), hair, 0, hy + .16, -.1).scale.set(1.08, .92, 1);
+        for (let i = 0; i < 16; i++) {
+          const a = i * 2.4, e = .25 + (i % 4) * .3, r = .245;
+          const x = Math.cos(a) * Math.cos(e) * r * 1.08, y = Math.sin(e) * r * .92, z = Math.sin(a) * Math.cos(e) * r;
+          if (z > .08 && y < .12) continue; // jangan menutupi wajah
+          add(this.head, sph(.075), i % 3 ? hair : curl, x, hy + .16 + y, -.1 + z, false);
+        }
+        // kacamata: dua bingkai bulat, lensa tipis kebiruan, jembatan, dan gagang ke telinga
+        const frame = T(0x141414), lens = new THREE.MeshBasicMaterial({ color: 0x9fd8ff, transparent: true, opacity: .35, depthWrite: false });
+        for (const s of [1, -1]) {
+          add(this.head, new THREE.TorusGeometry(.05, .011, 6, 18), frame, s * .075, hy + .02, .19, false);
+          add(this.head, new THREE.CircleGeometry(.045, 16), lens, s * .075, hy + .02, .188, false);
+          add(this.head, new THREE.BoxGeometry(.012, .012, .17), frame, s * .165, hy + .03, .1, false);
+        }
+        add(this.head, new THREE.BoxGeometry(.05, .012, .012), frame, 0, hy + .03, .195, false);
+        break;
+      }
       case 'crown': {
         hairCap(c2);
         for (const s of [1, -1]) { const h1 = add(this.head, cone(.055, .22), c2, s * .15, hy + .2, -.02); h1.rotation.z = -s * .7; const h2 = add(this.head, cone(.035, .2), c2, s * .25, hy + .34, -.02); h2.rotation.z = -s * .1; add(this.arms[s > 0 ? 0 : 1][0], cone(.09, .3), c2, s * .04, .14, 0).rotation.z = -s * .5; }
@@ -317,8 +394,8 @@ export class CharModel {
   apply(target: Pose, dt: number, rate: number, time: number) {
     const k = dt <= 0 ? 1 : 1 - Math.exp(-rate * dt), p = this.pose;
     // twist (indeks 2) lewat jalur terpendek, agar putaran penuh (spin, spinkick) tidak "terurai" balik
-    for (let i = 0; i < 22; i++) { const d = target[i] - p[i]; p[i] += (i === 2 || i === 21 ? ((d % 360) + 540) % 360 - 180 : d) * k; }
-    p[21] = ((p[21] % 360) + 540) % 360 - 180; // salto: simpan di -180..180 agar kembali ke 0 lewat jalur terpendek
+    for (let i = 0; i < 22; i++) { const d = target[i] - p[i]; p[i] += (i === 2 || i === 4 || i === 21 ? ((d % 360) + 540) % 360 - 180 : d) * k; }
+    p[21] = ((p[21] % 360) + 540) % 360 - 180; p[4] = ((p[4] % 360) + 540) % 360 - 180; // pitch juga: bantingan berputar >180° // salto: simpan di -180..180 agar kembali ke 0 lewat jalur terpendek
     const drop = (h: number, kn: number, s: number) => TH * Math.cos(h * D) * Math.cos(s * D) + SH * Math.cos((h - kn) * D);
     const lie = Math.min(1, Math.abs(p[4]) / 90);
     const py = Math.max(drop(p[15], p[16], p[17]), drop(p[18], p[19], p[20]), .25) + FOOT;
