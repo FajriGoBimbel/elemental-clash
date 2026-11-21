@@ -221,6 +221,7 @@ function startFight(oppId: string, arenaId: string, level: number, p1Id = app.ch
   ui.innerHTML = ''; stage.showSpin = 0;
   const view = new FightView(stage, m), bot = V ? null : new Bot(BOT_LEVELS[level], !!p2.boss);
   if (bot && training && app.dummy !== 'fight') bot.dummy = app.dummy;
+  if (!V) { m.f[0].freeUlt = save.cheat.ult; m.f[0].freeDash = save.cheat.dash; m.f[0].freeHp = save.cheat.hp; } // cheat hanya untuk pemain di mode lawan bot
   const F: Fight = fight = {
     m, view, hud: null, bot, demo: params.has('demo') && !V ? new Bot(BOT_LEVELS[2]) : null, paused: false, acc: 0, started: false, oppId, arenaId, level,
     ctls: [], ctlSlot: [], src: [], pauseBy: -1, pauseEl: null, dropSlot: -1,
@@ -304,19 +305,37 @@ function onFightEvent(e: Ev) {
   }
 }
 
-const COMBOS: [string, [string, string]][] = [
-  ['L-L-L', ['Jab, Cross, Hook', 'Jab, Cross, Hook']], ['L-L-H', ['Jab, Cross, Uppercut', 'Jab, Cross, Uppercut']],
-  ['L-H-H', ['Jab, Roundhouse, Tendangan Putar', 'Jab, Roundhouse, Spinning Back Kick']], ['H-H-H', ['Teep, Roundhouse, Tendangan', 'Teep, Roundhouse, Kick']],
-  ['H-L-L', ['Teep, Superman Punch, Hook', 'Teep, Superman Punch, Hook']], ['H-H-L', ['Teep, Roundhouse, Sikutan', 'Teep, Roundhouse, Elbow']],
-];
+// nama gerakan kombo menurut animasinya; gerakan khas (yang punya desc) memakai namanya sendiri
+const ANIM_NAME: Record<string, [string, string]> = {
+  jab: ['Jab', 'Jab'], cross: ['Cross', 'Cross'], hook: ['Hook', 'Hook'], uppercut: ['Uppercut', 'Uppercut'], roundhouse: ['Roundhouse', 'Roundhouse'],
+  spinkick: ['Tendangan Putar', 'Spinning Back Kick'], teep: ['Teep', 'Teep'], kick: ['Tendangan', 'Kick'], superman: ['Superman Punch', 'Superman Punch'], elbow: ['Sikutan', 'Elbow'],
+  gknee: ['Lutut Bara', 'Ember Knee'], spinfist: ['Tinju Putar', 'Spinning Backfist'], sweep: ['Sapuan Akar', 'Root Sweep'], crescent: ['Tendangan Kipas', 'Crescent Kick'],
+};
+const hvChain = (c: CharDef) => (['hv', 'hv2', 'hv3'] as const).map(id => { const m = c.moves[id]; return tr(m.desc ? m.name! : ANIM_NAME[m.anim] || [m.anim, m.anim]); }).join(', ');
+/** Semua rantai kombo karakter (L-L-L, H-L, ...), ditelusuri dari cabang data gerakannya. */
+function combos(c: CharDef) {
+  const out: [string, string][] = [], mv = c.moves;
+  const walk = (id: string, pat: string, names: string[]) => {
+    const m = mv[id], n = [...names, m.desc ? tr(m.name!) : tr(ANIM_NAME[m.anim] || [m.anim, m.anim])];
+    const br = m.branch || {};
+    // lanjutan ke kombo udara tidak dirinci di sini (sudah dijelaskan di baris serangan udara)
+    if (br.atk && mv[br.atk].air) { out.push([pat.split('').join('-'), n.join(', ') + ' → ' + T('kombo udara', 'air combo')]); return; }
+    if (!br.atk && !br.hvy) { if (pat.length > 1) out.push([pat.split('').join('-'), n.join(', ')]); return; }
+    if (br.atk) walk(br.atk, pat + 'L', n);
+    if (br.hvy) walk(br.hvy, pat + 'H', n);
+  };
+  walk('a1', 'L', []); walk('hv', 'H', []);
+  return out;
+}
 function movesHtml(c: CharDef) {
   return `<div class="moves" style="${elVar(c.elem)}">
     <div class="mv"><b>${T('Serangan Ringan', 'Light Attack')}</b><span>${T('Tekan beruntun untuk kombo jab, cross, hook. Di udara: tendangan lompat. Sambil menunduk: sapuan.', 'Tap repeatedly for a jab, cross, hook combo. In the air: jump kick. While crouching: sweep.')}</span></div>
-    <div class="mv"><b>${T('Serangan Berat', 'Heavy Attack')}</b><span><strong>${tr(c.moves.hv.name!)}</strong> — ${T('Tekan beruntun untuk kombo teep, roundhouse, kick: ritmenya lebih lambat dari serangan ringan tapi kuat, tendangan terakhir menjatuhkan lawan. Di udara: tendangan menukik. Sambil menunduk: pukulan ke atas, ampuh melawan lompatan.', 'Tap repeatedly for a teep, roundhouse, kick combo: slower rhythm than light attacks but strong, the last kick knocks the foe down. In the air: diving kick. While crouching: rising strike, great against jump-ins.')}</span></div>
+    <div class="mv"><b>${T('Serangan Berat', 'Heavy Attack')}</b><span><strong>${tr(c.moves.hv.name!)}</strong> — ${T(`Tekan beruntun untuk kombo ${hvChain(c)}: ritmenya lebih lambat dari serangan ringan tapi kuat, serangan terakhir menjatuhkan lawan. Di udara: tendangan menukik. Sambil menunduk: pukulan ke atas, ampuh melawan lompatan.`, `Tap repeatedly for a ${hvChain(c)} combo: slower rhythm than light attacks but strong, the last hit knocks the foe down. In the air: diving kick. While crouching: rising strike, great against jump-ins.`)}</span></div>
     ${(['s1', 'ult'] as const).map((k, i) => `<div class="mv"><b>${[T('Spesial', 'Special'), T('Pamungkas', 'Ultimate')][i]}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc || ['', ''])}${c.moves[k].cd ? ` <span class="mut">(${c.moves[k].cd} ${T('dtk', 's')})</span>` : ''}</span></div>`).join('')}
-    <div class="mv"><b>${T('Kombo', 'Combos')}</b><span>${COMBOS.map(([k, n]) => `<strong>${k}</strong> ${tr(n)}`).join(' · ')} <span class="mut">(L = ${T('ringan', 'light')}, H = ${T('berat', 'heavy')})</span></span></div>
+    ${(['a2', 'a3', 'a4', 'hv3', 'hhl'] as const).filter(k => c.moves[k]?.desc).map(k => `<div class="mv"><b>${T('Ciri khas', 'Signature')}</b><span><strong>${tr(c.moves[k].name!)}</strong> — ${tr(c.moves[k].desc!)}</span></div>`).join('')}
+    <div class="mv"><b>${T('Kombo', 'Combos')}</b><span>${combos(c).map(([k, n]) => `<strong>${k}</strong> ${n}`).join(' · ')} <span class="mut">(L = ${T('ringan', 'light')}, H = ${T('berat', 'heavy')})</span></span></div>
     <div class="mv"><b>${T('Tahan penutup', 'Hold finisher')}</b><span>${T('Tahan tombol pukulan ke-3: Light = rentetan pukulan yang menahan lawan; Heavy = pukulan charged yang menjebol tangkisan.', 'Hold the 3rd button: Light = a flurry that keeps the foe stunned; Heavy = a charged blow that breaks guard.')}</span></div>
-    <div class="mv"><b>${T('Tangkis', 'Block')}</b><span>${T('Menahan 85% damage. Tiap serangan yang ditahan memakai stamina; stamina habis = tangkisan jebol.', 'Blocks 85% of damage. Each blocked hit costs stamina; at zero your guard breaks.')}</span></div>
+    <div class="mv"><b>${T('Tangkis', 'Block')}</b><span>${T('Menahan 85% damage. Tiap serangan yang ditahan memakai stamina; stamina habis = tangkisan jebol. Saat terjatuh atau terlempar: tekan untuk langsung bangun dan kebal sesaat, seperti dash (1 stamina).', 'Blocks 85% of damage. Each blocked hit costs stamina; at zero your guard breaks. While knocked down or airborne: tap to get up instantly with brief invulnerability, like dash (1 stamina).')}</span></div>
     <div class="mv"><b>Dash</b><span>${T('Dengan arah: melesat cepat dan kebal sesaat. Tanpa arah: kebal di tempat. Saat terjatuh atau terlempar: lepas dari kombo. Saat terhuyung kena pukul: combo breaker (2 stamina). Memakai 1 stamina; pulih penuh dalam ±5 detik.', 'With a direction: a quick burst with brief invulnerability. Without: invulnerable in place. While knocked down or airborne: break free. While staggered: combo breaker (2 stamina). Costs 1 stamina; fully recovers in about 5 seconds.')}</span></div></div>`;
 }
 function pause(by = -1) {
@@ -401,7 +420,15 @@ function confirmBuy(name: string, price: number, yes: () => void) {
 // ---------- cheat: tekan \ di menu utama ----------
 const CHEATS: Record<string, () => string> = {
   'rich-guy': () => { save.coins += 1000; persist(); sound.coin(); return T('+1000 koin!', '+1000 coins!'); },
+  // kode unlimited: dijalankan sekali menyala, sekali lagi mati
+  'unlimited-ulti': () => cheatToggle('ult', T('Pamungkas tanpa batas', 'Unlimited ultimate')),
+  'unlimited-dash': () => cheatToggle('dash', T('Dash tanpa batas', 'Unlimited dash')),
+  'unlimited-hp': () => cheatToggle('hp', T('HP tanpa batas', 'Unlimited HP')),
 };
+function cheatToggle(k: 'ult' | 'dash' | 'hp', name: string) {
+  save.cheat = { ...save.cheat, [k]: !save.cheat[k] }; persist(); sound.confirm();
+  return `${name}: ${save.cheat[k] ? T('NYALA', 'ON') : T('MATI', 'OFF')}`;
+}
 addEventListener('keydown', e => {
   if (e.code !== 'Backslash' || !$('.scr.menu') || $('.over')) return;
   e.preventDefault();

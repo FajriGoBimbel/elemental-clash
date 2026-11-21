@@ -94,3 +94,17 @@ iOS: jalankan `npm i @capacitor/ios && npx cap add ios` di macOS dengan Xcode, l
 
 Angka karakter dan jurus ada di `src/data.ts`. Setelah mengubahnya, jalankan `npm run sim -- 30` dan lihat tabel
 menang per pasangan, urutan tingkat bot, serta durasi per arena.
+
+## Cheat Code
+
+┌────────────────┬────────────────────────────┐
+│      Kode      │            Efek            │
+├────────────────┼────────────────────────────┤
+│ rich-guy       │ +1000 koin                 │
+├────────────────┼────────────────────────────┤
+│ unlimited-ulti │ Pamungkas selalu siap      │
+├────────────────┼────────────────────────────┤
+│ unlimited-dash │ Dash tidak memakai stamina │
+├────────────────┼────────────────────────────┤
+│ unlimited-hp   │ HP tidak pernah berkurang  │
+└────────────────┴────────────────────────────┘

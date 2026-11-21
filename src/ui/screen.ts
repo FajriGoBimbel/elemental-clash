@@ -26,6 +26,8 @@ function gesture() {
 /** Aktif hanya di browser perangkat sentuh, bukan di aplikasi native atau desktop. */
 export function initScreen() {
   if (Capacitor.isNativePlatform() || !matchMedia('(pointer: coarse)').matches) return;
+  // Safari iOS mengabaikan user-scalable=no: cubit dua jari tetap men-zoom halaman kecuali gestur ini dicegah
+  for (const t of ['gesturestart', 'gesturechange']) document.addEventListener(t, e => e.preventDefault(), { passive: false });
   addEventListener('touchend', gesture, { capture: true, passive: true });
   addEventListener('click', gesture, true);
   document.addEventListener('fullscreenchange', () => { if (isFull()) lockLandscape(); });

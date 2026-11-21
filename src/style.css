@@ -12,7 +12,7 @@
 }
 :root.cb { --good: #4aa8ff; --bad: #ff9d2e; }
 * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
-html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--txt); font-family: var(--body); user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none; }
+html, body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--txt); font-family: var(--body); user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none; }
 #gl { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #ui { position: fixed; inset: 0; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
@@ -230,19 +230,20 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .stick-zone { position: absolute; left: 0; top: 24%; bottom: 0; width: 46%; pointer-events: auto; }
 .stick-base { position: absolute; left: calc(2.2rem + var(--cm)); bottom: calc(1.8rem + var(--cm)); width: calc(7.6rem * var(--cs)); height: calc(7.6rem * var(--cs)); border-radius: 50%; border: 2px solid rgba(255, 255, 255, .4); background: radial-gradient(circle, rgba(255, 255, 255, .1), rgba(255, 255, 255, .02)); opacity: var(--co); }
 .stick-knob { position: absolute; left: 50%; top: 50%; width: 44%; height: 44%; margin: -22% 0 0 -22%; border-radius: 50%; background: rgba(255, 255, 255, .8); box-shadow: 0 .2rem .8rem rgba(0, 0, 0, .5); }
-.btns { position: absolute; right: calc(1.1rem + var(--cm)); bottom: calc(1rem + var(--cm)); width: 16rem; height: 12rem; transform: scale(var(--cs)); transform-origin: bottom right; opacity: var(--co); }
+.btns { position: absolute; right: calc(1.1rem + var(--cm)); bottom: calc(1rem + var(--cm)); width: 15rem; height: 15rem; transform: scale(var(--cs)); transform-origin: bottom right; opacity: var(--co); }
 .cb { position: absolute; border-radius: 50%; pointer-events: auto; display: grid; place-items: center; border: 2px solid rgba(255, 255, 255, .55); background: rgba(10, 13, 28, .55); font-family: var(--disp); font-weight: 700; font-size: .7rem; overflow: hidden; color: #fff; }
 .cb svg { width: 46%; height: 46%; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .cb svg.ic { fill: currentColor; stroke: none; }
 .cb small { position: absolute; bottom: 9%; font-size: .56rem; letter-spacing: .05em; opacity: .9; }
 .cb.on { transform: scale(.9); background: rgba(255, 255, 255, .35); }
-.cb.atk { right: .2rem; bottom: .2rem; width: 5.6rem; height: 5.6rem; border-color: #fff; background: rgba(255, 255, 255, .16); }
-.cb.blk { right: 6.5rem; bottom: .1rem; width: 4.1rem; height: 4.1rem; }
-.cb.hvy { right: 5.6rem; bottom: 4.8rem; width: 4.1rem; height: 4.1rem; border-color: #fff; background: rgba(255, 255, 255, .1); }
+/* busur mengelilingi tombol Serang agar semua terjangkau ibu jari: ring dalam Tangkis/Berat/Dash, ring luar Spesial/Pamungkas */
+.cb.atk { right: .4rem; bottom: .4rem; width: 5.6rem; height: 5.6rem; border-color: #fff; background: rgba(255, 255, 255, .16); }
+.cb.blk { right: 6.4rem; bottom: 1rem; width: 4.4rem; height: 4.4rem; }
+.cb.hvy { right: 4.9rem; bottom: 4.9rem; width: 4.4rem; height: 4.4rem; border-color: #fff; background: rgba(255, 255, 255, .1); }
 .cb.hvy svg { stroke-width: 3.6; }
-.cb.s1 { right: 10.1rem; bottom: 4.6rem; width: 4.1rem; height: 4.1rem; border-color: var(--el); color: var(--el); }
-.cb.dsh { right: 11.3rem; bottom: .1rem; width: 3.7rem; height: 3.7rem; }
-.cb.ult { right: 5.2rem; bottom: 9.2rem; width: 4.8rem; height: 4.8rem; border-color: var(--gold); color: #0a0c18; background: radial-gradient(circle, #fff, var(--gold)); box-shadow: 0 0 1.4rem var(--gold); display: none; animation: pulse .7s infinite; }
+.cb.s1 { right: 10rem; bottom: 4.6rem; width: 4.3rem; height: 4.3rem; border-color: var(--el); color: var(--el); }
+.cb.dsh { right: 1.2rem; bottom: 6.6rem; width: 4rem; height: 4rem; }
+.cb.ult { right: 4.4rem; bottom: 9.8rem; width: 4.8rem; height: 4.8rem; border-color: var(--gold); color: #0a0c18; background: radial-gradient(circle, #fff, var(--gold)); box-shadow: 0 0 1.4rem var(--gold); display: none; animation: pulse .7s infinite; }
 .cb.ult.ready { display: grid; }
 .cb .cd { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(rgba(0, 0, 0, .72) calc(var(--p, 0) * 360deg), transparent 0); pointer-events: none; }
 .ctl.swap .btns { right: auto; left: calc(1.1rem + var(--cm)); transform: scale(var(--cs)) scaleX(-1); transform-origin: bottom left; }
@@ -257,7 +258,7 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .ctl.half .stick-zone { width: 44%; }
 .ctl.half .stick-base { left: calc(1rem + var(--cm)); width: calc(6.2rem * var(--cs)); height: calc(6.2rem * var(--cs)); }
 .ctl.half .btns { right: calc(.5rem + var(--cm)); transform: scale(calc(var(--cs) * .74)); }
-.enr { position: absolute; right: 5.2rem; bottom: 9.2rem; width: 4.8rem; height: 4.8rem; border-radius: 50%; pointer-events: none;
+.enr { position: absolute; right: 4.4rem; bottom: 9.8rem; width: 4.8rem; height: 4.8rem; border-radius: 50%; pointer-events: none;
   background: conic-gradient(var(--gold) calc(var(--en, 0) * 360deg), rgba(255, 255, 255, .1) 0); -webkit-mask: radial-gradient(circle, transparent 58%, #000 60%); mask: radial-gradient(circle, transparent 58%, #000 60%); opacity: .8; }
 .ctl.ultok .enr { display: none; }
 .sig { display: inline-flex; align-items: flex-end; gap: .12rem; height: .9em; vertical-align: -.05em; }
@@ -382,6 +383,9 @@ input[type=range] { width: 9rem; accent-color: var(--gold); touch-action: pan-x;
 .sh-url { width: 100%; font: 500 .82rem var(--body); color: var(--txt); background: rgba(255, 255, 255, .07); border: 1px solid var(--line); border-radius: .3rem; padding: .55rem .7rem; user-select: all; -webkit-user-select: all; }
 .share .warn { color: var(--gold); font-size: .78rem; }
 .share .mbtns { flex-wrap: wrap; }
+
+/* iPhone otomatis zoom saat fokus ke input berhuruf < 16px, dan tidak kembali */
+input.cmd, input.sh-url { font-size: max(16px, 1em); }
 
 /* ---------- Turnamen Bareng (CR-002) ---------- */
 .warn { color: var(--gold); }

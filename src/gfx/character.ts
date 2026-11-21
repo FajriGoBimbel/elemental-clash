@@ -24,24 +24,24 @@ const shade = (c: number, k: number) => new THREE.Color(c).multiplyScalar(k).get
 const mix = (a: number, b: number, k: number) => new THREE.Color(a).lerp(new THREE.Color(b), k).getHex();
 
 // ---------- Pose ----------
-export const PK = ['y', 'lean', 'twist', 'roll', 'pitch', 'sp', 'spT', 'hd', 'hdT', 'aLs', 'aLr', 'aLe', 'aRs', 'aRr', 'aRe', 'lLh', 'lLk', 'lLs', 'lRh', 'lRk', 'lRs'] as const;
+export const PK = ['y', 'lean', 'twist', 'roll', 'pitch', 'sp', 'spT', 'hd', 'hdT', 'aLs', 'aLr', 'aLe', 'aRs', 'aRr', 'aRe', 'lLh', 'lLk', 'lLs', 'lRh', 'lRk', 'lRs', 'flip'] as const;
 export type Pose = Float32Array;
-export interface PoseSpec { y?: number; lean?: number; twist?: number; roll?: number; pitch?: number; sp?: number; spT?: number; hd?: number; hdT?: number; aL?: number[]; aR?: number[]; lL?: number[]; lR?: number[] }
+export interface PoseSpec { y?: number; lean?: number; twist?: number; roll?: number; pitch?: number; sp?: number; spT?: number; hd?: number; hdT?: number; aL?: number[]; aR?: number[]; lL?: number[]; lR?: number[]; flip?: number }
 const STANCE: PoseSpec = { lean: 7, twist: -20, hdT: 16, aL: [58, 12, 100], aR: [38, 16, 116], lL: [24, 30, 5], lR: [-20, 24, 6] };
 export function P(o: PoseSpec = {}, base: PoseSpec = STANCE): Pose {
-  const s = { ...base, ...o }, p = new Float32Array(21);
+  const s = { ...base, ...o }, p = new Float32Array(22);
   p[0] = s.y || 0; p[1] = s.lean || 0; p[2] = s.twist || 0; p[3] = s.roll || 0; p[4] = s.pitch || 0; p[5] = s.sp || 0; p[6] = s.spT || 0; p[7] = s.hd || 0; p[8] = s.hdT || 0;
   const set = (i: number, a?: number[]) => { if (a) { p[i] = a[0] || 0; p[i + 1] = a[1] || 0; p[i + 2] = a[2] || 0; } };
-  set(9, s.aL); set(12, s.aR); set(15, s.lL); set(18, s.lR);
+  set(9, s.aL); set(12, s.aR); set(15, s.lL); set(18, s.lR); p[21] = s.flip || 0;
   return p;
 }
-const tmp = new Float32Array(21);
+const tmp = new Float32Array(22);
 function seq(u: number, fr: [number, Pose][], out: Pose) {
   if (u <= fr[0][0]) { out.set(fr[0][1]); return; }
   for (let i = 1; i < fr.length; i++) if (u <= fr[i][0]) {
     let k = (u - fr[i - 1][0]) / (fr[i][0] - fr[i - 1][0]); k = k * k * (3 - 2 * k);
     const a = fr[i - 1][1], b = fr[i][1];
-    for (let j = 0; j < 21; j++) out[j] = a[j] + (b[j] - a[j]) * k;
+    for (let j = 0; j < 22; j++) out[j] = a[j] + (b[j] - a[j]) * k;
     return;
   }
   out.set(fr[fr.length - 1][1]);
@@ -87,6 +87,21 @@ const ATK: Record<string, [number, Pose][]> = {
   slam: atk({ aL: [176, 10, 22], aR: [176, 10, 22], lean: -14, y: .18, twist: 0, sp: -8 }, { aL: [46, 6, 8], aR: [46, 6, 8], lean: 46, twist: 0, lL: [72, 108, 14], lR: [56, 112, 14], hd: 16 }),
   whip: atk({ aR: [152, 22, 62], twist: -42, lean: -4 }, { aR: [70, -10, 4], aL: [-20, 30, 50], twist: 36, lean: 20, lL: [36, 36, 5], lR: [-32, 12, 6] }),
   charge: atk({ lean: 22, twist: -30, aL: [34, 6, 130], lL: [40, 56, 5], lR: [-20, 40, 6] }, { lean: 42, twist: -58, aL: [30, 4, 134], aR: [-34, 16, 62], lL: [56, 50, 5], lR: [-46, 10, 6], hd: -14 }),
+  // lutut bara: melangkah maju, kedua tangan menarik kepala lawan, lutut kanan dihantam naik ke perut
+  gknee: atk({ lR: [-20, 60, 6], lL: [30, 40, 5], lean: 10, twist: -20, aL: [96, 20, 60], aR: [96, 20, 60] }, { lR: [112, 128, 5], lL: [-14, 16, 4], lean: 22, twist: 6, y: .06, aL: [70, 10, 110], aR: [70, 10, 110], hd: 8 }),
+  // tinju putar: berputar membelakangi lawan, punggung tangan kanan menyabet mendatar (putaran di SPIN_FIST)
+  spinfist: [[0, P()], [.75, P({ aR: [60, 20, 140], aL: [70, 14, 110], lean: 8, y: -.04, hdT: 50, lL: [30, 40, 5], lR: [-16, 30, 6] })],
+    [1.08, P({ aR: [92, 70, 6], aL: [60, 20, 120], lean: 12, y: -.03, hdT: 0, roll: 8, lL: [34, 36, 5], lR: [-30, 16, 6] })],
+    [2.05, P({ aR: [88, 78, 10], aL: [60, 20, 120], lean: 12, y: -.03, roll: 8, lL: [34, 36, 5], lR: [-30, 16, 6] })], [3, P()]],
+  // dorongan telapak ganda: kedua tangan ditarik ke pinggang dengan kuda-kuda rendah, lalu didorong lurus ke depan
+  palms: atk({ aL: [-34, 14, 110], aR: [-34, 14, 110], lean: -4, twist: -6, y: -.1, lL: [52, 84, 8], lR: [-12, 70, 8] }, { aL: [86, 6, 6], aR: [86, -6, 6], lean: 22, twist: 0, y: -.08, hd: 4, lL: [56, 60, 6], lR: [-40, 10, 6] }),
+  // tendangan kipas (crescent): kaki lurus diayun tinggi dari luar ke dalam seperti kipas dibuka
+  crescent: atk({ lR: [70, 10, -40], lL: [6, 20, 0], twist: -30, lean: 0, y: -.02, aL: [60, 50, 60], aR: [40, 60, 60] }, { lR: [128, 4, 34], lL: [-6, 12, 0], twist: 46, lean: -16, roll: -12, y: .04, aL: [20, 70, 30], aR: [-10, 70, 30], hd: 8 }, .8),
+  // salto mekar: jongkok, lalu salto ke belakang sambil kaki kanan menendang ke atas (putaran di FLIP_P)
+  flipkick: [[0, P()], [.75, P({ lL: [70, 110, 6], lR: [50, 110, 6], lean: 20, y: -.08, aL: [-30, 20, 40], aR: [-30, 20, 40] })],
+    [1.08, P({ lR: [150, 0, 4], lL: [60, 110, 4], lean: -10, y: .8, aL: [160, 30, 10], aR: [160, 30, 10], hd: -14 })],
+    [2.05, P({ lR: [100, 110, 4], lL: [100, 120, 4], lean: 10, y: .75, aL: [60, 40, 90], aR: [60, 40, 90] })],
+    [2.6, P({ lL: [40, 70, 6], lR: [20, 60, 6], lean: 18, y: -.06 })], [3, P()]],
   spin: atk({ lR: [40, 90, 8], aL: [20, 50, 60], aR: [20, 50, 60], twist: -60 }, { lR: [88, 5, 12], lL: [-4, 10, 0], aL: [10, 82, 16], aR: [10, 82, 16], lean: -8, twist: 0 }),
 };
 const POSES = {
@@ -109,6 +124,10 @@ const POSES = {
 
 /** Putaran badan spinning back kick (u → derajat): -20 = kuda-kuda, 180 = membelakangi lawan, 340 = kembali menghadap. */
 const SPIN_TW: [number, number][] = [[0, -20], [.3, -10], [1.08, 192], [2.05, 214], [3, 340]];
+/** Tinju putar: berputar ke arah sebaliknya hampir satu putaran penuh; -380 ≡ kuda-kuda (-20). */
+const SPIN_FIST: [number, number][] = [[0, -20], [.75, -150], [1.08, -320], [2.05, -350], [3, -380]];
+/** Salto mekar (derajat pinggul): 0 = tegak, -360 = satu putaran ke belakang. */
+const FLIP_P: [number, number][] = [[0, 0], [.75, 8], [1.08, -110], [2.05, -300], [2.6, -360], [3, -360]];
 function lerpPts(u: number, pts: [number, number][]) {
   if (u <= pts[0][0]) return pts[0][1];
   for (let i = 1; i < pts.length; i++) if (u <= pts[i][0]) { const [u0, v0] = pts[i - 1], [u1, v1] = pts[i]; return v0 + (v1 - v0) * (u - u0) / (u1 - u0); }
@@ -123,6 +142,8 @@ export function poseFor(c: AnimCtx, out: Pose) {
       const fr = ATK[c.anim!] || ATK.jab; seq(c.u, fr, out);
       if (c.anim === 'spin' && c.u > .75 && c.u < 2.3) out[2] = -(c.u - .75) / 1.55 * 720;
       if (c.anim === 'spinkick') out[2] = lerpPts(c.u, SPIN_TW);
+      if (c.anim === 'spinfist') out[2] = lerpPts(c.u, SPIN_FIST);
+      if (c.anim === 'flipkick') out[21] = lerpPts(c.u, FLIP_P);
       return;
     }
     case 'walk': {
@@ -296,12 +317,13 @@ export class CharModel {
   apply(target: Pose, dt: number, rate: number, time: number) {
     const k = dt <= 0 ? 1 : 1 - Math.exp(-rate * dt), p = this.pose;
     // twist (indeks 2) lewat jalur terpendek, agar putaran penuh (spin, spinkick) tidak "terurai" balik
-    for (let i = 0; i < 21; i++) { const d = target[i] - p[i]; p[i] += (i === 2 ? ((d % 360) + 540) % 360 - 180 : d) * k; }
+    for (let i = 0; i < 22; i++) { const d = target[i] - p[i]; p[i] += (i === 2 || i === 21 ? ((d % 360) + 540) % 360 - 180 : d) * k; }
+    p[21] = ((p[21] % 360) + 540) % 360 - 180; // salto: simpan di -180..180 agar kembali ke 0 lewat jalur terpendek
     const drop = (h: number, kn: number, s: number) => TH * Math.cos(h * D) * Math.cos(s * D) + SH * Math.cos((h - kn) * D);
     const lie = Math.min(1, Math.abs(p[4]) / 90);
     const py = Math.max(drop(p[15], p[16], p[17]), drop(p[18], p[19], p[20]), .25) + FOOT;
     this.pelvis.position.y = py + p[0];
-    this.pelvis.rotation.set(0, p[2] * D, p[3] * D);
+    this.pelvis.rotation.set(p[21] * D, p[2] * D, p[3] * D); // flip berporos di pinggul (salto)
     this.tilt.rotation.x = p[4] * D; this.tilt.position.set(0, lie * .17, lie * .45);
     this.spine.rotation.set(p[1] * D + p[5] * D, p[6] * D, 0);
     this.head.rotation.set(p[7] * D, p[8] * D, 0);

@@ -13,10 +13,13 @@ const STAM_REGEN = .6, BREAK_COST = 2;
 export class Fighter {
   x = 0; y = 0; vx = 0; vy = 0; push = 0; face = 1;
   hp: number; energy = 0; stam = MAX_STAM; stamWait = 0;
+  /** cheat: pamungkas selalu siap / dash tanpa memakai stamina / HP tidak pernah berkurang */
+  freeUlt = false; freeDash = false; freeHp = false;
   state: State = 'idle'; st = 0;
   move: Move | null = null; mt = 0; su = 0; ac = 0; re = 0; hitDone = false; spawned = false; multiT = 0; seq = 0;
   cd1 = 0; cd2 = 0; burn = 0; burnTick = 0; slow = 0; root = 0; inv = 0; lock = 0; stunT = 0;
   landed = false; airUsed = false; dashDir = 1; comboN = 0; hitSeq = 0; chargeT = 0;
+  private blkPrev = false;
   elem: Elem;
   private buf = { atk: 0, hvy: 0, s1: 0, dash: 0, ult: 0 };
 
@@ -65,7 +68,7 @@ export class Fighter {
    *  Saat terhuyung (state hit) juga bisa sebagai combo breaker, tapi memakan 2 stamina. */
   private tryDash(inp: Input, m: Match): boolean {
     const dir = Math.abs(inp.mx) > .2 ? Math.sign(inp.mx) : 0, wake = this.state === 'down' || this.state === 'hit';
-    const cost = this.state === 'hit' ? BREAK_COST : 1;
+    const cost = this.freeDash ? 0 : this.state === 'hit' ? BREAK_COST : 1;
     if (!(this.buf.dash > 0 && this.stam >= cost && (this.root <= 0 || !dir))) return false;
     this.buf.dash = 0; this.stam -= cost; this.stamWait = 1; this.state = 'dash'; this.st = 0; this.move = null;
     this.dashDir = dir; this.inv = Math.max(this.inv, wake ? (dir ? .3 : .5) : dir ? .16 : .3);
@@ -77,6 +80,7 @@ export class Fighter {
   hold(inp: Input) { for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as const) if (inp[k]) this.buf[k] = .16; }
 
   update(dt: number, inp: Input, opp: Fighter, m: Match) {
+    if (this.freeUlt) this.energy = 100;
     const d = this.def, b = this.buf;
     this.cd1 = Math.max(0, this.cd1 - dt); this.cd2 = Math.max(0, this.cd2 - dt);
     this.slow = Math.max(0, this.slow - dt); this.root = Math.max(0, this.root - dt);
@@ -88,6 +92,7 @@ export class Fighter {
     if (d.regen && this.alive && this.hp > 0) this.hp = Math.min(d.hp, this.hp + d.hp * d.regen * dt);
     if (this.stamWait > 0) this.stamWait -= dt; else this.stam = Math.min(MAX_STAM, this.stam + dt * STAM_REGEN);
     for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as const) b[k] = inp[k] ? .16 : b[k] - dt;
+    const blkTap = inp.block && !this.blkPrev; this.blkPrev = inp.block;
     this.st += dt;
     const spd = d.spd * (this.slow > 0 ? .55 : 1);
 
@@ -118,7 +123,8 @@ export class Fighter {
         const mv = this.move!; this.mt += dt;
         // hold penutup: tombolnya masih ditahan di ujung ancang-ancang → pose ditahan sambil mengumpulkan tenaga,
         // dilepas setelah cukup lama (atau mencapai batas) → berubah ke versi hold
-        if (mv.hold && this.mt >= this.su * .9) {
+        // !spawned: hanya di ujung ancang-ancang; tanpa ini spam tombol saat aktif/recovery memundurkan mt → hit ke-3 berulang terus
+        if (mv.hold && !this.spawned && this.mt >= this.su * .9) {
           const hvy = mv.hold[1] === 'hvy', held = hvy ? inp.hvyHold : inp.atkHold, min = hvy ? .4 : .3;
           if (held && this.chargeT < .8) {
             if (this.chargeT < min && this.chargeT + dt >= min) m.ev({ t: 'charged', f: this });
@@ -134,7 +140,10 @@ export class Fighter {
         const total = this.su + this.ac + this.re;
         if (mv.lunge && this.mt >= this.su * .5 && this.mt < this.su + this.ac) this.vx = this.face * mv.lunge * (this.root > 0 ? 0 : 1);
         else if (this.grounded) this.vx = 0;
-        if (!this.spawned && this.mt >= this.su) { this.spawned = true; if (mv.spawn) m.spawn(mv.spawn, this, opp); }
+        if (!this.spawned && this.mt >= this.su) {
+          this.spawned = true; if (mv.spawn) m.spawn(mv.spawn, this, opp);
+          if (mv.hop) { this.vy = mv.hop; this.y = Math.max(this.y, .01); this.airUsed = false; } // boleh menyerang lagi di udara
+        }
         // kombo: tombol yang ditekan memilih cabang berikutnya (lihat daftar kombo di data.ts).
         // Gerakan Heavy menunggu 30% recovery bila kena (50% bila meleset) agar ritmenya terasa lebih berat dari Light.
         const br = mv.branch, nx = br && (b.hvy > 0 && br.hvy ? br.hvy : b.atk > 0 && br.atk ? br.atk : null);
@@ -158,6 +167,8 @@ export class Fighter {
         break;
       case 'down':
         if (this.tryDash(inp, m)) break; // terbaring maupun masih terlempar di udara
+        // tekan tangkis saat jatuh = bangun kebal di tempat, sama seperti dash tanpa arah (1 stamina)
+        if (blkTap) { this.buf.dash = .16; if (this.tryDash({ ...inp, mx: 0 }, m)) break; this.buf.dash = 0; }
         if (this.landed && this.st >= .8) { this.state = 'getup'; this.st = 0; this.inv = .5; }
         break;
       case 'getup':
