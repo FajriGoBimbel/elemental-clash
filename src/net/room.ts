@@ -45,13 +45,10 @@ export interface Req { conn: number; name: string }
 export type DenyWhy = 'code' | 'full' | 'reject' | 'closed';
 
 export class HostRoom {
-  /** diindeks nomor slot (Main Bareng: 0–1, Turnamen Online: 1–15) */
-  code = newCode(); peers: (Peer | null)[] = []; reqs: Req[] = []; input: RemoteInput[] = [];
+  code = newCode(); peers: (Peer | null)[] = [null, null]; reqs: Req[] = []; input = [new RemoteInput(), new RemoteInput()];
   onChange = () => { }; onCmd = (_slot: number, _m: any) => { }; onJoin = (_slot: number) => { }; onDrop = (_slot: number) => { }; onBack = (_slot: number) => { };
   private conns = new Map<number, string>(); private off: (() => void) | null = null; private timer = 0; private bz = 0;
-  constructor(private sock: Sock, public slots: number[], public hostName: string) { for (const i of [0, 1, ...slots]) { this.peers[i] = null; this.input[i] = new RemoteInput(); } }
-  /** Turnamen Online: kirim snapshot pertarungan yang sama ke semua perangkat. */
-  stateAll(d: object) { const m = { t: 'ss', n: ++this.sn, ...d }; for (const p of this.peers) if (p?.up) this.udp(p, m); }
+  constructor(private sock: Sock, public slots: number[], public hostName: string) { }
 
   async open() {
     this.off = this.sock.on(e => this.ev(e));
