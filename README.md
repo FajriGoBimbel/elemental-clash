@@ -42,6 +42,14 @@ HP kontroler memilih **Gabung sebagai Kontroler**, memasukkan kode 6 karakter da
   dihapus dari alamat setelah dipakai. Hanya versi web (APK tidak punya alamat yang bisa dibuka HP lain). Uji: `npm run test:share`.
   Alamat dasar link diatur lewat env **`VITE_SHARE_URL`** (lihat `.env.example`; di Vercel: Project Settings → Environment
   Variables, lalu redeploy). Kosong = alamat halaman yang sedang dibuka.
+- **Turnamen Bareng (CR-002):** Main Bareng → *Turnamen Bareng*. Pembuat mengatur nama, peserta maks. 4–16, format
+  (gugur tunggal, gugur ganda, liga, grup lalu gugur), best of 1/3, kunci karakter, arena, Mode Murni, bot pengisi, dan
+  ikut bermain atau tidak. Peserta gabung lewat *Gabung dengan Kode* / link undangan, isi nama (maks. 12, unik) dan karakter.
+  Undian ber-seed (Undi Ulang → Kunci Bagan), bye otomatis, klasemen (poin → selisih ronde → pertemuan langsung → playoff),
+  panggilan giliran 60 dtk (tidak siap = WO; keduanya tidak siap = ditunda sekali lalu keduanya WO), putus 15 dtk → WO atau
+  bot menggantikan. Status tersimpan otomatis (`localStorage` host); *Lanjutkan Turnamen* membuka kode yang sama dan HP
+  peserta masuk lagi otomatis dengan namanya. Mesin bagan: `src/game/bracket.ts` (tanpa UI). Uji: `npm run test:bracket`
+  (4 format × 4–16 peserta × 25 seed) dan `npm run test:tour` (host + 3 HP + bot, termasuk host dimuat ulang).
 - **Versi web (mis. Vercel):** browser tidak bisa membuka UDP/TCP lokal, jadi dipakai WebRTC DataChannel lewat PeerJS
   (`src/net/transport.ts` → `PeerBus`). Internet hanya untuk perkenalan awal di server sinyal (default: cloud publik PeerJS),
   data permainan mengalir langsung antar-perangkat. Server sinyal sendiri: set `VITE_PEER_HOST`, `VITE_PEER_PORT`,

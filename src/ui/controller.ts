@@ -5,6 +5,7 @@ import { ClientLink, CODE_ABC, RECONNECT_MS } from '../net/room';
 import { getSock } from '../net/transport';
 import { Controls, KEYMAP } from './input';
 import { noInput, type Input } from '../game/fighter';
+import { bracketHtml, myStatus } from './bracketview';
 import { $, bind, elVar, esc, etag, icon, modal, show, sigIcon, ui } from './dom';
 import { T, persist, save, tr } from '../save';
 import { sound } from '../audio';
@@ -16,6 +17,12 @@ interface Ctx { portraits: Record<string, string>; athumbs: Record<string, strin
 let ctx: Ctx, link: ClientLink | null = null, code = '', scr: any = null, view = '', pad: Controls | null = null;
 let wake: { release(): Promise<void> } | null = null, sigT = 0, guestMid = -1;
 const pname = (i: number) => T('Pemain ', 'Player ') + (i + 1);
+/** Label pemain di HP ini: nama turnamen bila ada, selain itu "Pemain N". */
+const meName = () => scr?.nm ? esc(scr.nm) : pname(link!.slot);
+const NKEY = 'ec-tname', TJ = 'ec-tj'; let lastCall = -1, autoName = '';
+/** Tab ini sudah terdaftar di turnamen berkode ini → nama dikirim ulang otomatis saat host dibuka kembali. */
+const tjoined = (): { code: string; name: string } | null => { try { return JSON.parse(sessionStorage.getItem(TJ) || 'null'); } catch { return null; } };
+const savedName = () => { try { return localStorage.getItem(NKEY) || ''; } catch { return ''; } };
 
 // Sesi disimpan per tab: bila halaman dimuat ulang (reload server dev, tab dibuang sistem),
 // kontroler langsung menyambung lagi dengan token yang sama tanpa kode dan izin ulang.
@@ -43,7 +50,7 @@ export async function controllerMode(c: Ctx) {
   else if (c.code) { code = c.code; link.join(code); } // dari link undangan
 }
 function leave(notify = true) {
-  if (notify) link?.cmd('leave');
+  if (notify) { link?.cmd('leave'); try { sessionStorage.removeItem(TJ); } catch { /* */ } }
   setTimeout(() => {
     store(false); padOff(); link?.leave(); link = null; scr = null; view = ''; keepAwake(false); clearInterval(sigT);
     removeEventListener('keydown', typeKey); document.removeEventListener('visibilitychange', onVis); ctx.exit();
@@ -99,6 +106,8 @@ function updJoin() {
     full: T('Ruangan penuh: sudah ada 2 kontroler.', 'The room is full: 2 controllers are already connected.'),
     reject: T('Host menolak permintaanmu.', 'The host declined your request.'),
     closed: T('Ruangan ditutup oleh host.', 'The host closed the room.'),
+    reg: T('Pendaftaran turnamen sudah ditutup.', 'Tournament registration is closed.'),
+    kick: T('Kamu dikeluarkan oleh pembuat turnamen.', 'You were removed by the tournament host.'),
     code: T('Kode ruangan sudah berubah. Minta kode terbaru dari host.', 'The room code has changed. Ask the host for the new code.'),
     lost: T('Gagal tersambung kembali ke host dalam 15 detik.', 'Could not reconnect to the host within 15 seconds.'),
   };
@@ -144,13 +153,14 @@ function lostOverlay() {
   };
   tick();
 }
-const top = (extra = '') => `<header class="ctop"><b>${pname(link!.slot)}</b><span class="mut">${T('ke', 'on')} ${esc(link!.hostName)}</span><span data-csig>${sigIcon(link!.sig)}</span>${extra}<span class="grow"></span>
+const top = (extra = '') => `<header class="ctop"><b>${meName()}</b><span class="mut">${T('ke', 'on')} ${esc(link!.hostName)}</span><span data-csig>${sigIcon(link!.sig)}</span>${extra}<span class="grow"></span>
   <button class="btn sm" data-a="lay">${T('Atur tombol', 'Layout')}</button><button class="btn sm hold" data-a="exit" title="${T('Tahan 2 detik', 'Hold 2 seconds')}">${T('Keluar', 'Leave')}<i></i></button></header>`;
 const common = { lay: () => layoutModal(), exit: () => leave() };
 
 function inScreen() {
   const s = scr; const key = s.s + '|' + (s.s === 'fight' ? s.id + '|' + (s.mid ?? 0) : JSON.stringify(s));
-  if (key === view) return; view = key;
+  if (s.nm && link) try { sessionStorage.setItem(TJ, JSON.stringify({ code: link.code, name: s.nm })); } catch { /* */ }
+  if (key === view) return; const same = view.split('|')[0] === s.s; view = key;
   if (s.s !== 'fight' && s.s !== 'pause') padOff();
   switch (s.s) {
     case 'lobby':
@@ -165,7 +175,7 @@ function inScreen() {
         <div class="cport" style="background-image:url(${ctx.portraits[c.id]})"></div>
         <div class="cinfo"><h2>${c.name}</h2><div class="row">${etag(c.elem)}<span class="mut">${tr(c.role)}</span></div><p>${tr(c.style)}</p>
           <div class="thumbs sm">${ids.map(id => { const x = charById(id); return `<button class="th ${id === c.id ? 'sel' : ''}" data-a="pick" data-v="${id}" style="${elVar(x.elem)};background-image:url(${ctx.portraits[id]})" aria-label="${x.name}" ${s.ready ? 'disabled' : ''}>${icon(x.elem)}</button>`; }).join('')}</div>
-          <div class="row"><button class="btn ${s.ready ? '' : 'pri'}" data-a="ready">${s.ready ? T('Batal siap', 'Unready') : T('Siap', 'Ready')}</button><span class="mut">${s.other ? T('Lawan sudah siap', 'Opponent is ready') : T('Lawan masih memilih…', 'Opponent is choosing…')}</span></div></div>
+          <div class="row"><button class="btn ${s.ready ? '' : 'pri'}" data-a="ready">${s.tour ? T('Daftar dengan karakter ini', 'Register with this fighter') : s.ready ? T('Batal siap', 'Unready') : T('Siap', 'Ready')}</button><span class="mut">${s.tour ? T('Pilih karakter untuk turnamen', 'Pick your tournament fighter') : s.other ? T('Lawan sudah siap', 'Opponent is ready') : T('Lawan masih memilih…', 'Opponent is choosing…')}</span></div></div>
         <button class="nav" data-a="next" aria-label="${T('Berikutnya', 'Next')}" ${s.ready ? 'disabled' : ''}>›</button></div>`, 'dim ctlr', {
         ...common, prev: () => step(-1), next: () => step(1),
         pick: id => { link!.cmd('pick', id); scr = { ...s, pick: id }; inScreen(); },
@@ -202,9 +212,34 @@ function inScreen() {
       play(s);
       $('.over.cpause')?.remove();
       const me = s.by === s.slot || !!s.solo, drop = s.drop >= 0; // solo: joystick selalu boleh melanjutkan
-      const o = modal(`<h2>${T('Jeda', 'Paused')}</h2><p>${drop ? T(`${pname(s.drop)} terputus. Menunggu…`, `${pname(s.drop)} disconnected. Waiting…`) : s.by < 0 ? T('Dijeda dari layar host.', 'Paused from the host screen.') : me ? T('Kamu menjeda pertandingan.', 'You paused the match.') : T(`Dijeda oleh ${pname(s.by)}.`, `Paused by ${pname(s.by)}.`)}</p>
+      const o = modal(`<h2>${T('Jeda', 'Paused')}</h2><p>${drop ? T(`${s.dn ? esc(s.dn) : pname(s.drop)} terputus. Menunggu…`, `${s.dn ? esc(s.dn) : pname(s.drop)} disconnected. Waiting…`) : s.by < 0 ? T('Dijeda dari layar host.', 'Paused from the host screen.') : me ? T('Kamu menjeda pertandingan.', 'You paused the match.') : T(`Dijeda oleh ${s.bn ? esc(s.bn) : pname(s.by)}.`, `Paused by ${s.bn ? esc(s.bn) : pname(s.by)}.`)}</p>
         <div class="mbtns">${me && !drop ? `<button class="btn pri" data-a="resume">${T('Lanjutkan', 'Resume')}</button>` : ''}<button class="btn hold" data-a="exit">${T('Keluar (tahan)', 'Leave (hold)')}<i></i></button></div>`, { resume: () => link!.cmd('resume'), exit: () => leave() });
       o.classList.add('cpause');
+      break;
+    }
+    case 'tname': tourName(s); break;
+    case 'tlobby': {
+      const c = charById(s.pub.ps[s.me].c);
+      show(`${top()}<div class="tlob"><div class="cport sm" style="${elVar(c.elem)};background-image:url(${ctx.portraits[c.id]})"></div>
+        <div><h2>${esc(s.pub.title)}</h2><p>${T(`Terdaftar sebagai <b>${esc(s.nm)}</b> · ${c.name}`, `Registered as <b>${esc(s.nm)}</b> · ${c.name}`)}</p>
+        <p class="mut">${T('Menunggu pembuat memulai turnamen…', 'Waiting for the host to start…')} (${s.pub.ps.length}/${s.pub.max})</p>
+        <div class="tnames">${s.pub.ps.map((p: any, i: number) => `<span class="${i === s.me ? 'me' : ''} ${p.on ? '' : 'off'}">${esc(p.n)}</span>`).join('')}</div>
+        <button class="btn sm" data-a="rechar">${T('Ganti karakter', 'Change fighter')}</button></div></div>`, 'dim ctlr', { ...common, rechar: () => link!.cmd('rechar') });
+      break;
+    }
+    case 'tbr':
+      show(`${top()}${myStatus(s.pub, s.me)}<div class="bwrap">${bracketHtml(s.pub, s.me)}</div>`, 'dim ctlr tbrv', common);
+      break;
+    case 'tcall': {
+      if (lastCall !== s.mid) { lastCall = s.mid; buzz('ult'); sound.confirm(); } // HP bergetar saat dipanggil
+      const o = charById(s.oc), ids: string[] = s.ids, me = charById(s.pick);
+      show(`${top()}<div class="tcall"><h1>${T('Giliranmu!', 'You\'re up!')}</h1>
+        <p>${T('Lawan', 'Opponent')}: <b>${esc(s.opp)}</b> <span class="mut">${o.name}</span></p>
+        ${!s.lock && !s.ready ? `<div class="thumbs sm">${ids.map(id => { const x = charById(id); return `<button class="th ${id === me.id ? 'sel' : ''}" data-a="pick" data-v="${id}" style="${elVar(x.elem)};background-image:url(${ctx.portraits[id]})" aria-label="${x.name}">${icon(x.elem)}</button>`; }).join('')}</div>` : `<p class="mut">${T('Karaktermu', 'Your fighter')}: ${me.name}</p>`}
+        ${s.ready ? `<p><span class="spin"></span>${T('Siap! Menunggu lawan…', 'Ready! Waiting for the opponent…')}</p>` : `<button class="btn pri big" data-a="go">${T('Siap', 'Ready')}</button>`}
+        <p class="mut">${T(`Tekan Siap dalam ${s.left} detik — jika tidak, kalah WO.`, `Press Ready within ${s.left} s — otherwise you lose by walkover.`)}</p></div>`, 'dim ctlr', {
+        ...common, go: () => link!.cmd('tready'), pick: id => { link!.cmd('pick', id); scr = { ...s, pick: id }; inScreen(); },
+      });
       break;
     }
     case 'result': {
@@ -216,12 +251,32 @@ function inScreen() {
       break;
     }
   }
+  if (same && s.s !== 'fight' && s.s !== 'pause') (ui.firstElementChild as HTMLElement | null)?.classList.add('still'); // pembaruan data: tanpa animasi masuk
+}
+
+// ---------- turnamen: isi nama ----------
+function tourName(s: any) {
+  const j = tjoined();
+  if (j && link && j.code === link.code && !s.err && autoName !== link.code + j.name) { autoName = link.code + j.name; link.cmd('name', j.name); }
+  const err: Record<string, string> = {
+    dup: T('Nama sudah dipakai peserta lain.', 'That name is already taken.'),
+    reg: T('Pendaftaran sudah ditutup — hanya peserta terdaftar yang bisa masuk lagi dengan namanya.', 'Registration is closed — only registered players can rejoin with their name.'),
+    full: T('Turnamen sudah penuh.', 'The tournament is full.'), empty: T('Isi namamu dulu.', 'Enter your name first.'),
+  };
+  show(`${top()}<div class="tname"><h2>${esc(s.title)}</h2><p>${s.reg ? T('Isi nama yang akan tampil di bagan (maks. 12 huruf).', 'Enter the name shown on the bracket (max 12 letters).') : T('Turnamen sudah berjalan. Masukkan nama yang kamu pakai saat mendaftar.', 'The tournament is running. Enter the name you registered with.')}</p>
+    <input class="tin big" maxlength="12" autocomplete="nickname" value="${esc(savedName())}" aria-label="${T('Nama', 'Name')}">
+    ${s.err ? `<p class="warn">${err[s.err] || ''}</p>` : ''}<button class="btn pri" data-a="ok">${T('Lanjut', 'Continue')}</button></div>`, 'dim ctlr', {
+    ...common, ok: () => submit(),
+  });
+  const inp = $('.tname input') as HTMLInputElement;
+  const submit = () => { const v = inp.value.trim().slice(0, 12); try { localStorage.setItem(NKEY, v); } catch { /* */ } link?.cmd('name', v); };
+  inp.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') submit(); });
 }
 
 // ---------- joystick + tombol ----------
 function padOn(id: string) {
   padOff(); const c = charById(id || 'aqualis');
-  ui.innerHTML = `<div class="cpad" style="${elVar(c.elem)}"><div class="pbar"><b>${pname(link!.slot)}</b><span>${c.name}</span>
+  ui.innerHTML = `<div class="cpad" style="${elVar(c.elem)}"><div class="pbar"><b>${meName()}</b><span>${c.name}</span>
     <div class="php"><i></i></div><div class="pen"><i></i></div><span class="wins"></span><span data-csig>${sigIcon(link!.sig)}</span><span class="grow"></span>
     <button class="cpause-b" data-a="pause" aria-label="${T('Jeda', 'Pause')}">II</button></div>
     <p class="watch">${T('Lihat layar host', 'Watch the host screen')}</p></div>`;

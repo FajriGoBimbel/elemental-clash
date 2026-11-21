@@ -39,13 +39,18 @@ export class RemoteInput {
 // ---------------- host ----------------
 export interface Peer { slot: number; name: string; tok: string; conn: number; host: string; uport: number; last: number; up: boolean; rtt: number; ts: number; dropAt: number }
 export interface Req { conn: number; name: string }
-export type DenyWhy = 'code' | 'full' | 'reject' | 'closed';
+export type DenyWhy = 'code' | 'full' | 'reject' | 'closed' | 'reg';
 
 export class HostRoom {
-  code = newCode(); peers: (Peer | null)[] = [null, null]; reqs: Req[] = []; input = [new RemoteInput(), new RemoteInput()];
+  code = newCode(); peers: (Peer | null)[]; reqs: Req[] = []; input: RemoteInput[];
+  /** Turnamen: permintaan langsung diterima tanpa tombol Izinkan; regClosed = pendaftaran ditutup (sambung ulang tetap boleh). */
+  auto = false; regClosed = false;
   onChange = () => { }; onCmd = (_slot: number, _m: any) => { }; onJoin = (_slot: number) => { }; onDrop = (_slot: number) => { }; onBack = (_slot: number) => { };
   private conns = new Map<number, string>(); private off: (() => void) | null = null; private timer = 0; private bz = 0;
-  constructor(private sock: Sock, public slots: number[], public hostName: string) { }
+  constructor(private sock: Sock, public slots: number[], public hostName: string) {
+    const n = Math.max(2, ...slots.map(s => s + 1));
+    this.peers = Array(n).fill(null); this.input = Array.from({ length: n }, () => new RemoteInput());
+  }
 
   async open() {
     this.off = this.sock.on(e => this.ev(e));
@@ -97,9 +102,11 @@ export class HostRoom {
         this.onBack(p.slot); this.onChange(); return; // selalu: kontroler yang dimuat ulang butuh layar terkini meski host belum sempat menandainya putus
       }
       if (m.code !== this.code) return this.deny(id, 'code');
+      if (this.regClosed) return this.deny(id, 'reg');
       if (this.slots.filter(s => !this.peers[s]).length - this.reqs.length <= 0) return this.deny(id, 'full');
       this.reqs.push({ conn: id, name: String(m.name || '?').slice(0, 24), uport: m.uport } as Req & { uport: number });
       this.sock.tcpSend(id, JSON.stringify({ t: 'wait' })); this.onChange();
+      if (this.auto) this.approve(id, true);
       return;
     }
     const p = this.peers.find(x => x && x.conn === id); if (!p) return;
@@ -119,7 +126,7 @@ export class HostRoom {
     if (!p.up) return; p.up = false; p.dropAt = now(); this.input[p.slot].release();
     this.sock.tcpClose(p.conn); this.onDrop(p.slot); this.onChange();
   }
-  kick(slot: number) { const p = this.peers[slot]; if (!p) return; if (p.up) { this.send(slot, { t: 'bye' }); setTimeout(() => this.sock.tcpClose(p.conn), 200); } this.peers[slot] = null; this.onChange(); }
+  kick(slot: number, why?: 'kick') { const p = this.peers[slot]; if (!p) return; if (p.up) { this.send(slot, { t: 'bye', why }); setTimeout(() => this.sock.tcpClose(p.conn), 200); } this.peers[slot] = null; this.onChange(); }
   private tick() { const t = now(); for (const p of this.peers) if (p?.up && t - p.last > DROP_MS) this.lose(p); }
   private udp(p: Peer, m: object) { this.sock.udpSend(p.host, p.uport, JSON.stringify(m)); }
   send(slot: number, m: object) { const p = this.peers[slot]; if (p?.up) this.sock.tcpSend(p.conn, JSON.stringify(m)); }
@@ -136,7 +143,7 @@ export const sigOf = (rtt: number) => rtt <= 0 ? 3 : rtt < 60 ? 3 : rtt < 140 ? 
 // ---------------- kontroler ----------------
 export type CState = 'idle' | 'search' | 'wait' | 'in' | 'lost' | 'fail';
 export class ClientLink {
-  state: CState = 'idle'; why: DenyWhy | 'notfound' | 'lost' | '' = ''; slot = -1; tok = ''; hostName = ''; code = ''; rtt = 0; lastRx = 0;
+  state: CState = 'idle'; why: DenyWhy | 'notfound' | 'lost' | 'kick' | '' = ''; slot = -1; tok = ''; hostName = ''; code = ''; rtt = 0; lastRx = 0;
   onState = () => { }; onMsg = (_m: any) => { }; onFb = (_m: any) => { }; onBuzz = (_k: string) => { }; onSnap = (_m: any) => { };
   private conn = -1; private host = ''; private uport = 0; private seq = 0; private hist: Frame[] = []; private reader: (() => Input) | null = null;
   private off: (() => void) | null = null; private timer = 0; private inTimer = 0; private attempt = 0; private bzN = 0; private connecting = false;
@@ -179,7 +186,7 @@ export class ClientLink {
       if (m.t === 'wait') this.set('wait');
       else if (m.t === 'ok') { this.slot = m.slot; this.tok = m.tok; this.hostName = m.host; this.attempt++; this.set('in'); }
       else if (m.t === 'deny') { this.attempt++; this.drop(); this.set('fail', m.why); }
-      else if (m.t === 'bye') { this.attempt++; this.drop(); this.tok = ''; this.set('fail', 'closed'); }
+      else if (m.t === 'bye') { this.attempt++; this.drop(); this.tok = ''; this.set('fail', m.why === 'kick' ? 'kick' : 'closed'); }
       else this.onMsg(m);
     } else if (e.t === 'close' && e.id === this.conn) {
       this.conn = -1;
