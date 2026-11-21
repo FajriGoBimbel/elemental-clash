@@ -17,6 +17,7 @@ export class Fighter {
   move: Move | null = null; mt = 0; su = 0; ac = 0; re = 0; hitDone = false; spawned = false; multiT = 0; seq = 0;
   cd1 = 0; cd2 = 0; burn = 0; burnTick = 0; slow = 0; root = 0; inv = 0; lock = 0; stunT = 0;
   landed = false; airUsed = false; dashDir = 1; comboN = 0; hitSeq = 0; chargeT = 0;
+  private blkPrev = false;
   elem: Elem;
   private buf = { atk: 0, hvy: 0, s1: 0, dash: 0, ult: 0 };
 
@@ -88,6 +89,7 @@ export class Fighter {
     if (d.regen && this.alive && this.hp > 0) this.hp = Math.min(d.hp, this.hp + d.hp * d.regen * dt);
     if (this.stamWait > 0) this.stamWait -= dt; else this.stam = Math.min(MAX_STAM, this.stam + dt * STAM_REGEN);
     for (const k of ['atk', 'hvy', 's1', 'dash', 'ult'] as const) b[k] = inp[k] ? .16 : b[k] - dt;
+    const blkTap = inp.block && !this.blkPrev; this.blkPrev = inp.block;
     this.st += dt;
     const spd = d.spd * (this.slow > 0 ? .55 : 1);
 
@@ -118,7 +120,8 @@ export class Fighter {
         const mv = this.move!; this.mt += dt;
         // hold penutup: tombolnya masih ditahan di ujung ancang-ancang → pose ditahan sambil mengumpulkan tenaga,
         // dilepas setelah cukup lama (atau mencapai batas) → berubah ke versi hold
-        if (mv.hold && this.mt >= this.su * .9) {
+        // !spawned: hanya di ujung ancang-ancang; tanpa ini spam tombol saat aktif/recovery memundurkan mt → hit ke-3 berulang terus
+        if (mv.hold && !this.spawned && this.mt >= this.su * .9) {
           const hvy = mv.hold[1] === 'hvy', held = hvy ? inp.hvyHold : inp.atkHold, min = hvy ? .4 : .3;
           if (held && this.chargeT < .8) {
             if (this.chargeT < min && this.chargeT + dt >= min) m.ev({ t: 'charged', f: this });
@@ -158,6 +161,8 @@ export class Fighter {
         break;
       case 'down':
         if (this.tryDash(inp, m)) break; // terbaring maupun masih terlempar di udara
+        // tekan tangkis saat jatuh = bangun kebal di tempat, sama seperti dash tanpa arah (1 stamina)
+        if (blkTap) { this.buf.dash = .16; if (this.tryDash({ ...inp, mx: 0 }, m)) break; this.buf.dash = 0; }
         if (this.landed && this.st >= .8) { this.state = 'getup'; this.st = 0; this.inv = .5; }
         break;
       case 'getup':
